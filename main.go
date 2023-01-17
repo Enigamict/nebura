@@ -14,22 +14,86 @@ type APIType uint16
 type RouteType uint8
 type TestType uint8
 type afi uint8
+type nexthopType uint8
+type Flag uint64
+type MessageFlag uint32
+type Safi uint8
 
 type Software struct {
 	name    string
 	version float64
 }
 
-const (
-	testSystem TestType = iota //0
-	testSystem1
-)
+const messageOpaqueLenth uint16 = 1024
+
+type opaque struct {
+	length uint16
+	data   [messageOpaqueLenth]uint8
+}
 
 const (
 	afiIP    afi = 1
 	afiIP6   afi = 2
 	afiEther afi = 3
 	afiMax   afi = 4
+)
+
+const ( // For FRRouting version 7 (zebra API version 6), these are defined in lib/zclient.h
+	// FlagAllowRecursion is referred in zclient, and it is renamed from ZEBRA_FLAG_INTERNAL (https://github.com/FRRouting/frr/commit/4e8b02f4df5d6bcfde6390955b8feda2a17dc9bd)
+	FlagAllowRecursion Flag = 0x01 // quagga, frr3, frr4, frr5, frr6, frr7
+	flagSelfRoute      Flag = 0x02 // quagga, frr3, frr4, frr5, frr6, frr7
+	// FlagIBGP is referred in zclient
+	FlagIBGP Flag = 0x04
+	// FlagSelected referred in zclient_test
+	FlagSelected      Flag = 0x08
+	flagFIBOverride   Flag = 0x10
+	flagEvpnRoute     Flag = 0x20
+	flagRRUseDistance Flag = 0x40
+	flagOnlink        Flag = 0x80  // frr7.0 only, this vale is deleted in frr7.1
+	flagTrapped       Flag = 0x80  // added in frr8
+	flagOffloaded     Flag = 0x100 // added in frr8
+	flagOffloadFailed Flag = 0x200 // added in frr8
+)
+
+const (
+	safiUnspec Safi = iota // added in FRRouting version 7.2 (Zapi 6)
+	SafiUnicast
+	safiMulticast
+	safiMplsVpn
+	safiEncap
+	safiEvpn
+	safiLabeledUnicast
+	safiFlowspec // added in FRRouting version 5 (Zapi 5)
+	safiMax
+)
+
+const ( // For FRRouting version 4, 5 and 6 (ZAPI version 5 and 6).  // MessageNexthop is referred in zclient
+	MessageNexthop MessageFlag = 0x01
+	// MessageDistance is referred in zclient_test
+	MessageDistance MessageFlag = 0x02
+	// MessageMetric is referred in zclient
+	MessageMetric MessageFlag = 0x04
+	messageTag    MessageFlag = 0x08
+	// MessageMTU is referred in zclient_test
+	MessageMTU    MessageFlag = 0x10
+	messageSRCPFX MessageFlag = 0x20
+	// MessageLabel is referred in zclient
+	MessageLabel          MessageFlag = 0x40  // deleted in frr7.3
+	messageBackupNexthops MessageFlag = 0x40  // added in frr7.4
+	messageNhg            MessageFlag = 0x80  // added in frr8
+	messageTableID        MessageFlag = 0x100 // frr8: 0x100, frr5&6&7.x: 0x80
+	messageSRTE           MessageFlag = 0x200 // frr8: 0x200, frr7.5: 0x100
+	messageOpaque         MessageFlag = 0x400 // introduced in frr8
+)
+
+const (
+	_                      nexthopType = iota
+	nexthopTypeIFIndex                 // 1
+	nexthopTypeIPv4                    // 2
+	nexthopTypeIPv4IFIndex             // 3
+	nexthopTypeIPv6                    // 4
+	nexthopTypeIPv6IFIndex             // 5
+	nexthopTypeBlackhole               // 6
 )
 
 const (
@@ -86,6 +150,50 @@ type Message struct {
 	Body   Body
 }
 
+type Prefix struct {
+	Family    uint8
+	PrefixLen uint8
+	Prefix    net.IP
+}
+
+type Nexthop struct {
+	Type            nexthopType //FRR5, FRR6, FRR7.x, FRR8, FRR8.1
+	VrfID           uint32      //FRR5, FRR6, FRR7.x, FRR8, FRR8.1
+	Ifindex         uint32      // Ifindex is referred in zclient_test
+	flags           uint8       //FRR7.1, FRR7.2 FRR7.3, FRR7.4, FRR7.5, FRR8, FRR8.1
+	Gate            net.IP      //union { union g_addr gate;
+	blackholeType   uint8       //        enum blackhole_type bh_type;}
+	LabelNum        uint8       //FRR5, FRR6, FRR7.x, FRR8, FRR8.1
+	MplsLabels      []uint32    //FRR5, FRR6, FRR7.x, FRR8, FRR8.1
+	rmac            [6]byte     //FRR6, FRR7.x, FRR8, FRR8.1
+	weight          uint32      //FRR7.3, FRR7.4, FRR7.5, FRR8, FRR8.1
+	backupNum       uint8       //FRR7.4, FRR7.5, FRR8, FRR8.1
+	backupIndex     []uint8     //FRR7.5, FRR8, FRR8.1
+	srteColor       uint32      //FRR7.5, FRR8, FRR8.1
+	seg6localAction uint32      //FRR8.1
+	seg6Segs        net.IP      //strcut in6_addr // FRR8.1
+}
+type IPRouteBody struct {
+	Type           RouteType   // FRR4&FRR5&FRR6&FRR7.x&FRR8
+	instance       uint16      // FRR4&FRR5&FRR6&FRR7.x&FRR8
+	Flags          Flag        // FRR4&FRR5&FRR6&FRR7.x&FRR8
+	Message        MessageFlag // FRR4&FRR5&FRR6&FRR7.x&FRR8
+	Safi           Safi        // FRR4&FRR5&FRR6&FRR7.x&FRR8
+	Prefix         Prefix      // FRR4&FRR5&FRR6&FRR7.x&FRR8
+	srcPrefix      Prefix      // FRR4&FRR5&FRR6&FRR7.x&FRR8
+	Nexthops       []Nexthop   // FRR4&FRR5&FRR6&FRR7.x&FRR8
+	backupNexthops []Nexthop   // added in frr7.4, FRR7.4&FRR7.5&FRR8
+	nhgid          uint32      // added in frr8
+	Distance       uint8       // FRR4&FRR5&FRR6&FRR7.x&FRR8
+	Metric         uint32      // FRR4&FRR5&FRR6&FRR7.x&FRR8
+	tag            uint32      // FRR4&FRR5&FRR6&FRR7.x&FRR8
+	Mtu            uint32      // FRR4&FRR5&FRR6&FRR7.x&FRR8
+	tableID        uint32      // FRR5&FRR6&FRR7.x&FRR8 (nh_vrf_id in FRR4)
+	srteColor      uint32      // added in frr7.5, FRR7.5&FRR8
+	opaque         opaque      // added in frr8
+	API            APIType     // API is referred in zclient_test
+	//vrfID        uint32    // lib/zebra.h:typedef uint32_t vrf_id_t;
+}
 type Client struct {
 	outgoing      chan *Message
 	incoming      chan *Message
@@ -135,18 +243,6 @@ const (
 	routerIDUpdate
 	hello
 )
-
-func closeChannel(ch chan *Message) bool {
-	select {
-	case _, ok := <-ch:
-		if ok {
-			close(ch)
-			return true
-		}
-	default:
-	}
-	return false
-}
 
 func addressByteLength(family uint8) (int, error) {
 	switch family {
@@ -347,26 +443,6 @@ func (c *Client) SendHello() error {
 	return nil
 }
 
-func main1() {
-	m := &Message{
-		Header: Header{
-			Len:    HeaderSize(5),
-			Marker: HeaderMarker(5),
-		},
-	}
-	s := Software{
-		name:    "frr",
-		version: 8.1,
-	}
-	b, err := m.serialize(s)
-
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	fmt.Printf("%x", b)
-}
-
 func readAll(conn net.Conn, length int) ([]byte, error) {
 	buf := make([]byte, length)
 	_, err := io.ReadFull(conn, buf)
@@ -391,7 +467,7 @@ func main() {
 	c := &Client{
 		outgoing:      outgoing,
 		incoming:      incoming,
-		redistDefault: RouteBGP,
+		redistDefault: RouteStatic,
 		conn:          conn,
 		Version:       6,
 		Software:      s,
@@ -412,29 +488,27 @@ func main() {
 	}()
 
 	c.SendHello()
-	c.SendRouterIDAdd()
+	//c.RouteAdd() lock zclient_test.go
 
 	for {
 		headerBuf, err := readAll(conn, int(HeaderSize(6)))
 		if err != nil {
 			log.Fatal(err)
 		}
-		log.Print("%v", headerBuf)
-		//
+
 		hd := &Header{}
 		err = hd.decodeFromBytes(headerBuf)
 		if err != nil {
 			log.Fatal(err)
 		}
+		log.Print("hdr:%x", hd)
 		bodyBuf, err := readAll(conn, int(hd.Len-HeaderSize(6)))
 		if err != nil {
 			log.Fatal(err)
 		}
-		log.Print("%v", bodyBuf)
+		log.Print("body:%v", bodyBuf)
 		//
 		//
 
 	}
-	//
-	fmt.Printf("testes")
 }
