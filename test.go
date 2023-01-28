@@ -261,6 +261,7 @@ func (b *routerIDUpdateBody) decodeFromBytes(data []byte, version uint8, softwar
 	if err != nil {
 		return err
 	}
+	fmt.Printf("aa")
 	b.prefix = data[1 : 1+addrlen] //zclient_stream_get_prefix
 	b.length = data[1+addrlen]     //zclient_stream_get_prefix
 	return nil
@@ -411,7 +412,7 @@ func (c *Client) sendCommand(command APIType, vrfID uint32, body Body) error {
 			Marker:  HeaderMarker(c.Version),
 			Version: c.Version,
 			VrfID:   vrfID,
-			Command: hello,
+			Command: command,
 		},
 		Body: body,
 	}
@@ -449,6 +450,359 @@ func readAll(conn net.Conn, length int) ([]byte, error) {
 	return buf, err
 }
 
+type nexthopProcessFlag uint8
+
+const (
+	nexthopHasType                nexthopProcessFlag = 0x01
+	nexthopHasVrfID               nexthopProcessFlag = 0x02
+	nexthopHasFlag                nexthopProcessFlag = 0x04
+	nexthopHasOnlink              nexthopProcessFlag = 0x08
+	nexthopProcessIPToIPIFindex   nexthopProcessFlag = 0x10
+	nexthopProcessIFnameToIFindex nexthopProcessFlag = 0x20 // for quagga
+)
+
+func nexthopProcessFlagForIPRouteBody(version uint8, software Software, isDecode bool) nexthopProcessFlag {
+	if version < 5 {
+		if isDecode {
+			return nexthopProcessFlag(0) // frr3&quagga don't have type&vrfid
+		}
+		return nexthopHasType // frr3&quagga need type for encode(serialize)
+	}
+	processFlag := (nexthopHasVrfID | nexthopHasType) // frr4, 5, 6, 7
+	if version == 6 && software.name == "frr" {
+		if software.version >= 7.3 {
+			processFlag |= (nexthopHasFlag | nexthopProcessIPToIPIFindex)
+		} else if software.version >= 7.1 {
+			processFlag |= nexthopHasOnlink
+		}
+	}
+	// nexthopHasType nexthopProcessIPToIPIFindex
+	return processFlag
+}
+
+const (
+	zapi4RouteNHRP RouteType = iota + routePIM + 1
+	zapi4RouteHSLS
+	zapi4RouteOLSR
+	zapi4RouteTABLE
+	zapi4RouteLDP
+	zapi4RouteVNC
+	zapi4RouteVNCDirect
+	zapi4RouteVNCDirectRH
+	zapi4RouteBGPDixrect
+	zapi4RouteBGPDirectEXT
+	zapi4RouteAll
+)
+
+var routeTypeZapi4Map = map[RouteType]RouteType{
+	routeNHRP:         zapi4RouteNHRP,
+	routeHSLS:         zapi4RouteHSLS,
+	routeOLSR:         zapi4RouteOLSR,
+	routeTABLE:        zapi4RouteTABLE,
+	routeLDP:          zapi4RouteLDP,
+	routeVNC:          zapi4RouteVNC,
+	routeVNCDirect:    zapi4RouteVNCDirect,
+	routeVNCDirectRH:  zapi4RouteVNCDirectRH,
+	routeBGPDirect:    zapi4RouteBGPDixrect,
+	routeBGPDirectEXT: zapi4RouteBGPDirectEXT,
+	routeAll:          zapi4RouteAll,
+}
+
+const (
+	zapi3RouteHSLS RouteType = iota + routePIM + 1
+	zapi3RouteOLSR
+	zapi3RouteBABEL
+	zapi3RouteNHRP // quagga 1.2.4
+)
+
+var routeTypeZapi3Map = map[RouteType]RouteType{
+	routeHSLS:  zapi3RouteHSLS,
+	routeOLSR:  zapi3RouteOLSR,
+	routeBABEL: zapi3RouteBABEL,
+	routeNHRP:  zapi3RouteNHRP,
+}
+
+func (t RouteType) toEach(version uint8) RouteType {
+	if t <= routePIM || version > 4 { // not need to convert
+		return t
+	}
+	routeTypeMap := routeTypeZapi4Map
+	if version < 4 {
+		routeTypeMap = routeTypeZapi3Map
+	}
+	backward, ok := routeTypeMap[t]
+	if ok {
+		return backward // success to convert
+	}
+	return routeMax // fail to convert and error value
+}
+
+func familyFromPrefix(prefix net.IP) uint8 {
+	if prefix.To4() != nil {
+		return syscall.AF_INET
+	} else if prefix.To16() != nil {
+		return syscall.AF_INET6
+	}
+	return syscall.AF_UNSPEC
+}
+
+func (n Nexthop) gateToType(version uint8) nexthopType {
+	if n.Gate.To4() != nil {
+		if version > 4 && n.Ifindex > 0 {
+			return nexthopTypeIPv4IFIndex
+		}
+		return nexthopTypeIPv4.toEach(version)
+	} else if n.Gate.To16() != nil {
+		if version > 4 && n.Ifindex > 0 {
+			return nexthopTypeIPv6IFIndex
+		}
+		return nexthopTypeIPv6.toEach(version)
+	} else if n.Ifindex > 0 {
+		return nexthopTypeIFIndex.toEach(version)
+	} else if version > 4 {
+		return nexthopTypeBlackhole
+	}
+	return nexthopType(0)
+}
+
+func (t nexthopType) ipToIPIFIndex() nexthopType {
+	// process of nexthopTypeIPv[4|6] is same as nexthopTypeIPv[4|6]IFIndex
+	// in IPRouteBody of frr7.3 and NexthoUpdate of frr
+	if t == nexthopTypeIPv4 {
+		return nexthopTypeIPv4IFIndex
+	} else if t == nexthopTypeIPv6 {
+		return nexthopTypeIPv6IFIndex
+	}
+	return t
+}
+
+// For Quagga.
+const (
+	nexthopTypeIFName              nexthopType = iota + 2 // 2
+	backwardNexthopTypeIPv4                               // 3
+	backwardNexthopTypeIPv4IFIndex                        // 4
+	nexthopTypeIPv4IFName                                 // 5
+	backwardNexthopTypeIPv6                               // 6
+	backwardNexthopTypeIPv6IFIndex                        // 7
+	nexthopTypeIPv6IFName                                 // 8
+	backwardNexthopTypeBlackhole                          // 9
+)
+
+var nexthopTypeMap = map[nexthopType]nexthopType{
+	nexthopTypeIPv4:        backwardNexthopTypeIPv4,        // 2 -> 3
+	nexthopTypeIPv4IFIndex: backwardNexthopTypeIPv4IFIndex, // 3 -> 4
+	nexthopTypeIPv6:        backwardNexthopTypeIPv6,        // 4 -> 6
+	nexthopTypeIPv6IFIndex: backwardNexthopTypeIPv6IFIndex, // 5 -> 7
+	nexthopTypeBlackhole:   backwardNexthopTypeBlackhole,   // 6 -> 9
+}
+
+func (t nexthopType) toEach(version uint8) nexthopType {
+	if version > 3 { // frr
+		return t
+	}
+	if t == nexthopTypeIFIndex || t > nexthopTypeBlackhole { // 1 (common), 7, 8, 9 (out of map range)
+		return t
+	}
+	backward, ok := nexthopTypeMap[t]
+	if ok {
+		return backward // converted value
+	}
+	return nexthopType(0) // error for conversion
+}
+func (n Nexthop) encode(version uint8, software Software, processFlag nexthopProcessFlag, message MessageFlag, apiFlag Flag) []byte {
+	var buf []byte
+	if processFlag&nexthopHasVrfID > 0 {
+		tmpbuf := make([]byte, 4)
+		binary.BigEndian.PutUint32(tmpbuf, n.VrfID)
+		buf = append(buf, tmpbuf...) //frr: stream_putl(s, api_nh->vrf_id);
+	}
+	if processFlag&nexthopHasType > 0 {
+		if n.Type == nexthopType(0) {
+			n.Type = n.gateToType(version)
+		}
+		buf = append(buf, uint8(n.Type)) //frr: stream_putc(s, api_nh->type);
+	}
+	if processFlag&nexthopHasFlag > 0 || processFlag&nexthopHasOnlink > 0 {
+		// frr7.1, 7.2 has onlink, 7.3 has flag
+		buf = append(buf, n.flags) //frr: stream_putc(s, nh_flags);
+	}
+
+	nhType := n.Type
+	if processFlag&nexthopProcessIPToIPIFindex > 0 {
+		nhType = nhType.ipToIPIFIndex()
+	}
+
+	if nhType == nexthopTypeIPv4.toEach(version) ||
+		nhType == nexthopTypeIPv4IFIndex.toEach(version) {
+		//frr: stream_put_in_addr(s, &api_nh->gate.ipv4);
+		buf = append(buf, n.Gate.To4()...)
+	}
+
+	return buf
+}
+
+func (b *IPRouteBody) decodeFromBytes(data []byte, version uint8, software Software) error {
+
+	fmt.Printf("%x", data)
+	return nil
+}
+
+func (b *IPRouteBody) string(version uint8, software Software) string {
+	return fmt.Sprintf(
+		"route_type")
+}
+
+func (f MessageFlag) ToEach(version uint8, software Software) MessageFlag {
+	if version > 4 { //zapi version 5, 6
+		if f > messageNhg && (version == 5 ||
+			(version == 6 && software.name == "frr" && software.version < 8)) { // except frr8
+			return f >> 1
+		}
+		return f
+	}
+	if version < 4 { //zapi version 3, 2
+		switch f {
+		case MessageMTU:
+			return 16
+		case messageTag:
+			return 32
+		}
+	}
+	switch f { //zapi version 4
+	case MessageDistance, MessageMetric, messageTag, MessageMTU, messageSRCPFX:
+		return f << 1
+	}
+	return f
+}
+func (b *IPRouteBody) serialize(version uint8, software Software) ([]byte, error) {
+	var buf []byte
+	numNexthop := len(b.Nexthops)
+
+	bufInitSize := 12 //type(1)+instance(2)+flags(4)+message(4)+safi(1), frr7.4&newer
+	switch version {
+	case 2, 3:
+		bufInitSize = 5
+	case 4:
+		bufInitSize = 10
+	case 5:
+		bufInitSize = 9 //type(1)+instance(2)+flags(4)+message(1)+safi(1)
+	case 6:
+		if software.name == "frr" && software.version < 7.4 { // frr6, 7, 7.2, 7.3
+			bufInitSize = 9 //type(1)+instance(2)+flags(4)+message(1)+safi(1)
+		}
+	}
+	buf = make([]byte, bufInitSize)
+
+	buf[0] = uint8(b.Type.toEach(version)) //frr: stream_putc(s, api->type);
+	if version < 4 {
+		buf[1] = uint8(b.Flags)
+		buf[2] = uint8(b.Message)
+		binary.BigEndian.PutUint16(buf[3:5], uint16(b.Safi))
+	} else { // version >= 4
+		//frr: stream_putw(s, api->instance);
+		binary.BigEndian.PutUint16(buf[1:3], uint16(b.instance))
+		//frr: stream_putl(s, api->flags);
+		binary.BigEndian.PutUint32(buf[3:7], uint32(b.Flags))
+		if version == 6 && software.name == "frr" && software.version >= 7.5 {
+			//frr7.5 and newer: stream_putl(s, api->message);
+			binary.BigEndian.PutUint32(buf[7:11], uint32(5))
+			buf[11] = uint8(b.Safi) //stream_putc(s, api->safi);
+		} else {
+			//frr 7.4 and older: stream_putc(s, api->message);
+			buf[7] = uint8(b.Message)
+			if version > 4 {
+				buf[8] = uint8(b.Safi) //frr: stream_putc(s, api->safi);
+			} else { // version 2,3 and 4 (quagga, frr3)
+				binary.BigEndian.PutUint16(buf[8:10], uint16(b.Safi))
+			}
+		}
+	}
+	if version > 4 { // version 5, 6 (after frr4)
+		if b.Prefix.Family == syscall.AF_UNSPEC {
+			b.Prefix.Family = familyFromPrefix(b.Prefix.Prefix)
+		}
+		//frr: stream_putc(s, api->prefix.family);
+		buf = append(buf, b.Prefix.Family)
+	}
+	// only zapi version 5 (frr4.0.x) have evpn routes
+	byteLen := (int(b.Prefix.PrefixLen) + 7) / 8
+	buf = append(buf, b.Prefix.PrefixLen) //frr: stream_putc(s, api->prefix.prefixlen);
+	buf = append(buf, b.Prefix.Prefix[:byteLen]...)
+	////frr: stream_write(s, (uint8_t *)&api->prefix.u.prefix, psize);
+	//fmt.Printf("prefix:%x", b.Prefix.Prefix.To4)
+
+	//// NHG(Nexthop Group) is added in frr8
+	////frr: if (CHECK_FLAG(api->message, ZAPI_MESSAGE_NHG))
+
+	processFlag := nexthopProcessFlagForIPRouteBody(version, software, false)
+	if b.Message&MessageNexthop > 0 {
+		if version < 5 {
+			fmt.Printf("version 4")
+		} else { // version >= 5
+			tmpbuf := make([]byte, 2)
+			binary.BigEndian.PutUint16(tmpbuf, uint16(numNexthop))
+			buf = append(buf, tmpbuf...) //frr: stream_putw(s, api->nexthop_num);
+		}
+		for _, nexthop := range b.Nexthops {
+			buf = append(buf, nexthop.encode(version, software, processFlag, b.Message, b.Flags)...)
+		}
+	}
+
+	if version == 6 && software.name == "frr" && software.version >= 7.4 &&
+		b.Message&messageBackupNexthops > 0 {
+		tmpbuf := make([]byte, 2)
+		binary.BigEndian.PutUint16(tmpbuf, uint16(len(b.backupNexthops)))
+		buf = append(buf, tmpbuf...) //frr: stream_putw(s, api->backup_nexthop_num);
+		for _, nexthop := range b.backupNexthops {
+			buf = append(buf, nexthop.encode(version, software, processFlag, b.Message, b.Flags)...)
+		}
+	}
+
+	tmpbuf := make([]byte, 4)
+	binary.BigEndian.PutUint32(tmpbuf, b.Metric)
+	buf = append(buf, tmpbuf...)
+	tmpbuf1 := make([]byte, 4)
+	binary.BigEndian.PutUint32(tmpbuf1, b.Metric)
+	buf = append(buf, tmpbuf1...)
+	//binary.BigEndian.PutUint16(buf[24:26], uint16(2))
+	//frr: stream_putl(s, api->flags);
+
+	return buf, nil
+}
+func (c *Client) SendRouteAdd() error {
+	//
+	message := MessageNexthop
+	if c.redistDefault > 0 {
+		body := &IPRouteBody{
+			Type:     RouteBGP,
+			Flags:    0,
+			Message:  message,
+			Safi:     SafiUnicast,
+			instance: 0,
+			Prefix: Prefix{
+				Prefix:    net.ParseIP("5.4.3.3").To4(),
+				PrefixLen: uint8(32),
+			},
+			Nexthops: []Nexthop{
+				{
+					Gate: net.ParseIP("10.0.0.2"),
+				},
+			},
+			Distance: uint8(0),
+			Metric:   uint32(0),
+			Mtu:      uint32(0),
+			API:      RouteAdd,
+		}
+		fmt.Printf("aa")
+		return c.sendCommand(RouteAdd, 0, body) // body interface
+	}
+	return nil
+}
+
+func (c *Client) SendInterfaceAdd() error {
+	return c.sendCommand(interfaceAdd, 0, nil)
+}
+
 func main() {
 	conn, err := net.Dial("unix", "/var/run/frr/zserv.api")
 
@@ -467,7 +821,7 @@ func main() {
 	c := &Client{
 		outgoing:      outgoing,
 		incoming:      incoming,
-		redistDefault: RouteStatic,
+		redistDefault: RouteBGP,
 		conn:          conn,
 		Version:       6,
 		Software:      s,
@@ -483,12 +837,13 @@ func main() {
 				}
 
 				_, err = conn.Write(b)
+				fmt.Printf("sendbuf:%v\n", b)
 			}
 		}
 	}()
 
 	c.SendHello()
-	//c.RouteAdd() lock zclient_test.go
+	c.SendRouteAdd()
 
 	for {
 		headerBuf, err := readAll(conn, int(HeaderSize(6)))
@@ -501,14 +856,12 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		log.Print("hdr:%x", hd)
 		bodyBuf, err := readAll(conn, int(hd.Len-HeaderSize(6)))
 		if err != nil {
 			log.Fatal(err)
 		}
 		log.Print("body:%v", bodyBuf)
-		//
-		//
 
 	}
+
 }
