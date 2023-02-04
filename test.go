@@ -1,11 +1,19 @@
 package main
 
+/*
+#cgo LDFLAGS: -L. -lipv4add
+#include "libnetlink.h"
+#include "ipv4add.h"
+*/
+import "C"
+
 import (
 	"fmt"
 	"io"
 	"log"
 	"net"
 	"syscall"
+	"zebraland/unix_server"
 
 	"encoding/binary"
 )
@@ -19,16 +27,17 @@ type Flag uint64
 type MessageFlag uint32
 type Safi uint8
 
+type ApiType uint8
+
+const (
+	testHello ApiType = iota //0
+	routeAdd
+	netlinkMode
+)
+
 type Software struct {
 	name    string
 	version float64
-}
-
-const messageOpaqueLenth uint16 = 1024
-
-type opaque struct {
-	length uint16
-	data   [messageOpaqueLenth]uint8
 }
 
 const (
@@ -131,6 +140,11 @@ const (
 	routeMax // max value for error
 )
 
+type ApiHeader struct {
+	Len     uint16
+	Command uint8
+}
+
 type Header struct {
 	Len     uint16
 	Marker  uint8
@@ -173,6 +187,7 @@ type Nexthop struct {
 	seg6localAction uint32      //FRR8.1
 	seg6Segs        net.IP      //strcut in6_addr // FRR8.1
 }
+
 type IPRouteBody struct {
 	Type           RouteType   // FRR4&FRR5&FRR6&FRR7.x&FRR8
 	instance       uint16      // FRR4&FRR5&FRR6&FRR7.x&FRR8
@@ -190,23 +205,16 @@ type IPRouteBody struct {
 	Mtu            uint32      // FRR4&FRR5&FRR6&FRR7.x&FRR8
 	tableID        uint32      // FRR5&FRR6&FRR7.x&FRR8 (nh_vrf_id in FRR4)
 	srteColor      uint32      // added in frr7.5, FRR7.5&FRR8
-	opaque         opaque      // added in frr8
 	API            APIType     // API is referred in zclient_test
 	//vrfID        uint32    // lib/zebra.h:typedef uint32_t vrf_id_t;
 }
+
 type Client struct {
 	outgoing      chan *Message
-	incoming      chan *Message
 	redistDefault RouteType
 	conn          net.Conn
 	Version       uint8
 	Software      Software
-}
-
-type routerIDUpdateBody struct {
-	length uint8
-	prefix net.IP
-	afi    afi
 }
 
 type helloBody struct {
@@ -244,28 +252,6 @@ const (
 	hello
 )
 
-func addressByteLength(family uint8) (int, error) {
-	switch family {
-	case syscall.AF_INET:
-		return net.IPv4len, nil
-	case syscall.AF_INET6:
-		return net.IPv6len, nil
-	}
-	return 0, fmt.Errorf("unknown address family: %d", family)
-}
-
-func (b *routerIDUpdateBody) decodeFromBytes(data []byte, version uint8, software Software) error {
-	family := data[0]
-
-	addrlen, err := addressByteLength(family)
-	if err != nil {
-		return err
-	}
-	fmt.Printf("aa")
-	b.prefix = data[1 : 1+addrlen] //zclient_stream_get_prefix
-	b.length = data[1+addrlen]     //zclient_stream_get_prefix
-	return nil
-}
 func (h *Header) decodeFromBytes(data []byte) error {
 	if uint16(len(data)) < 4 {
 		return fmt.Errorf("not all ZAPI message header")
@@ -289,18 +275,6 @@ func (h *Header) decodeFromBytes(data []byte) error {
 		return fmt.Errorf("unsupported ZAPI version: %d", h.Version)
 	}
 	return nil
-}
-
-func (b *routerIDUpdateBody) serialize(version uint8, software Software) ([]byte, error) {
-	if version == 6 && software.name == "frr" && software.version >= 7.5 {
-		return []byte{0x00, uint8(b.afi)}, nil //stream_putw(s, afi);
-
-	}
-	return []byte{}, nil
-}
-
-func (b *routerIDUpdateBody) string(version uint8, software Software) string {
-	return fmt.Sprintf("id: %s/%d", b.prefix.String(), b.length)
 }
 
 func (h *Header) serialize() ([]byte, error) {
@@ -417,19 +391,6 @@ func (c *Client) sendCommand(command APIType, vrfID uint32, body Body) error {
 		Body: body,
 	}
 	c.send(m)
-	return nil
-}
-
-func (c *Client) SendRouterIDAdd() error {
-	bodies := make([]*routerIDUpdateBody, 0)
-	for _, afi := range []afi{afiIP, afiIP6} {
-		bodies = append(bodies, &routerIDUpdateBody{
-			afi: afi,
-		})
-	}
-	for _, body := range bodies {
-		c.sendCommand(routerIDAdd, 0, body)
-	}
 	return nil
 }
 
@@ -679,98 +640,40 @@ func (b *IPRouteBody) serialize(version uint8, software Software) ([]byte, error
 	numNexthop := len(b.Nexthops)
 
 	bufInitSize := 12 //type(1)+instance(2)+flags(4)+message(4)+safi(1), frr7.4&newer
-	switch version {
-	case 2, 3:
-		bufInitSize = 5
-	case 4:
-		bufInitSize = 10
-	case 5:
-		bufInitSize = 9 //type(1)+instance(2)+flags(4)+message(1)+safi(1)
-	case 6:
-		if software.name == "frr" && software.version < 7.4 { // frr6, 7, 7.2, 7.3
-			bufInitSize = 9 //type(1)+instance(2)+flags(4)+message(1)+safi(1)
-		}
-	}
 	buf = make([]byte, bufInitSize)
 
-	buf[0] = uint8(b.Type.toEach(version)) //frr: stream_putc(s, api->type);
-	if version < 4 {
-		buf[1] = uint8(b.Flags)
-		buf[2] = uint8(b.Message)
-		binary.BigEndian.PutUint16(buf[3:5], uint16(b.Safi))
-	} else { // version >= 4
-		//frr: stream_putw(s, api->instance);
-		binary.BigEndian.PutUint16(buf[1:3], uint16(b.instance))
-		//frr: stream_putl(s, api->flags);
-		binary.BigEndian.PutUint32(buf[3:7], uint32(b.Flags))
-		if version == 6 && software.name == "frr" && software.version >= 7.5 {
-			//frr7.5 and newer: stream_putl(s, api->message);
-			binary.BigEndian.PutUint32(buf[7:11], uint32(5))
-			buf[11] = uint8(b.Safi) //stream_putc(s, api->safi);
-		} else {
-			//frr 7.4 and older: stream_putc(s, api->message);
-			buf[7] = uint8(b.Message)
-			if version > 4 {
-				buf[8] = uint8(b.Safi) //frr: stream_putc(s, api->safi);
-			} else { // version 2,3 and 4 (quagga, frr3)
-				binary.BigEndian.PutUint16(buf[8:10], uint16(b.Safi))
-			}
-		}
-	}
-	if version > 4 { // version 5, 6 (after frr4)
-		if b.Prefix.Family == syscall.AF_UNSPEC {
-			b.Prefix.Family = familyFromPrefix(b.Prefix.Prefix)
-		}
-		//frr: stream_putc(s, api->prefix.family);
-		buf = append(buf, b.Prefix.Family)
-	}
+	buf[0] = uint8(RouteBGP) //frr: stream_putc(s, api->type);
+	//frr: stream_putw(s, api->instance);
+	binary.BigEndian.PutUint16(buf[1:3], uint16(b.instance))
+	//frr: stream_putl(s, api->flags);
+	binary.BigEndian.PutUint32(buf[3:7], uint32(b.Flags))
+	//frr7.5 and newer: stream_putl(s, api->message);
+	binary.BigEndian.PutUint32(buf[7:11], uint32(5))
+	buf[11] = uint8(b.Safi) //stream_putc(s, api->safi);
+	b.Prefix.Family = familyFromPrefix(b.Prefix.Prefix)
+	//frr: stream_putc(s, api->prefix.family);
+	buf = append(buf, b.Prefix.Family)
 	// only zapi version 5 (frr4.0.x) have evpn routes
 	byteLen := (int(b.Prefix.PrefixLen) + 7) / 8
 	buf = append(buf, b.Prefix.PrefixLen) //frr: stream_putc(s, api->prefix.prefixlen);
 	buf = append(buf, b.Prefix.Prefix[:byteLen]...)
-	////frr: stream_write(s, (uint8_t *)&api->prefix.u.prefix, psize);
-	//fmt.Printf("prefix:%x", b.Prefix.Prefix.To4)
-
-	//// NHG(Nexthop Group) is added in frr8
-	////frr: if (CHECK_FLAG(api->message, ZAPI_MESSAGE_NHG))
 
 	processFlag := nexthopProcessFlagForIPRouteBody(version, software, false)
-	if b.Message&MessageNexthop > 0 {
-		if version < 5 {
-			fmt.Printf("version 4")
-		} else { // version >= 5
-			tmpbuf := make([]byte, 2)
-			binary.BigEndian.PutUint16(tmpbuf, uint16(numNexthop))
-			buf = append(buf, tmpbuf...) //frr: stream_putw(s, api->nexthop_num);
-		}
-		for _, nexthop := range b.Nexthops {
-			buf = append(buf, nexthop.encode(version, software, processFlag, b.Message, b.Flags)...)
-		}
+	tmpbuf := make([]byte, 2)
+	binary.BigEndian.PutUint16(tmpbuf, uint16(numNexthop))
+	buf = append(buf, tmpbuf...) //frr: stream_putw(s, api->nexthop_num);
+	for _, nexthop := range b.Nexthops {
+		buf = append(buf, nexthop.encode(version, software, processFlag, b.Message, b.Flags)...)
 	}
 
-	if version == 6 && software.name == "frr" && software.version >= 7.4 &&
-		b.Message&messageBackupNexthops > 0 {
-		tmpbuf := make([]byte, 2)
-		binary.BigEndian.PutUint16(tmpbuf, uint16(len(b.backupNexthops)))
-		buf = append(buf, tmpbuf...) //frr: stream_putw(s, api->backup_nexthop_num);
-		for _, nexthop := range b.backupNexthops {
-			buf = append(buf, nexthop.encode(version, software, processFlag, b.Message, b.Flags)...)
-		}
-	}
-
-	tmpbuf := make([]byte, 4)
-	binary.BigEndian.PutUint32(tmpbuf, b.Metric)
-	buf = append(buf, tmpbuf...)
-	tmpbuf1 := make([]byte, 4)
-	binary.BigEndian.PutUint32(tmpbuf1, b.Metric)
-	buf = append(buf, tmpbuf1...)
-	//binary.BigEndian.PutUint16(buf[24:26], uint16(2))
-	//frr: stream_putl(s, api->flags);
-
+	metricbuf := make([]byte, 8)
+	binary.BigEndian.PutUint32(metricbuf, b.Metric)
+	binary.BigEndian.PutUint32(metricbuf, b.Mtu) // 最後の4byteはなんの4byteか分からない
+	buf = append(buf, metricbuf...)
 	return buf, nil
 }
 func (c *Client) SendRouteAdd() error {
-	//
+
 	message := MessageNexthop
 	if c.redistDefault > 0 {
 		body := &IPRouteBody{
@@ -780,30 +683,74 @@ func (c *Client) SendRouteAdd() error {
 			Safi:     SafiUnicast,
 			instance: 0,
 			Prefix: Prefix{
-				Prefix:    net.ParseIP("5.4.3.3").To4(),
+				Prefix:    net.ParseIP("5.4.3.6").To4(),
 				PrefixLen: uint8(32),
 			},
 			Nexthops: []Nexthop{
 				{
-					Gate: net.ParseIP("10.0.0.2"),
+					Gate: net.ParseIP("192.168.64.6"),
 				},
 			},
 			Distance: uint8(0),
 			Metric:   uint32(0),
 			Mtu:      uint32(0),
-			API:      RouteAdd,
 		}
-		fmt.Printf("aa")
 		return c.sendCommand(RouteAdd, 0, body) // body interface
 	}
 	return nil
 }
 
-func (c *Client) SendInterfaceAdd() error {
-	return c.sendCommand(interfaceAdd, 0, nil)
+func (b *ApiHeader) decodeApiHdr(data []byte) error {
+
+	b.Len = binary.BigEndian.Uint16(data[0:2])
+	b.Command = data[2]
+	return nil
 }
 
-func main() {
+func netlinkSendRouteAdd(data []byte) error {
+
+	//tt := binary.BigEndian.Uint32(data[4:8])
+
+	var index uint8
+	ipSrcBuf := make([]byte, 4)
+	ipDstBuf := make([]byte, 4)
+
+	copy(ipDstBuf, data[4:8])
+	dstPrefix := net.IP(ipDstBuf).To4()
+
+	copy(ipSrcBuf, data[9:13])
+	srcPrefix := net.IP(ipSrcBuf).To4()
+	fmt.Printf("%v", data)
+	fmt.Printf("%v", dstPrefix.String())
+	fmt.Printf("%v", srcPrefix.String())
+
+	index = data[13]
+
+	C.ipv4_route_add(C.CString(dstPrefix.String()), C.CString(srcPrefix.String()), C.int(index))
+	return nil
+}
+
+func ReadAll(conn net.Conn) {
+	defer conn.Close()
+
+	hdr, err := unix_server.Read(conn)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	fmt.Printf("%v", hdr)
+	hd := &ApiHeader{}
+	hd.decodeApiHdr(hdr)
+
+	switch hd.Command {
+	case uint8(routeAdd):
+		netlinkSendRouteAdd(hdr)
+
+	}
+
+}
+
+func zebraClientInit() (*Client, error) {
 	conn, err := net.Dial("unix", "/var/run/frr/zserv.api")
 
 	if err != nil {
@@ -811,7 +758,6 @@ func main() {
 	}
 
 	outgoing := make(chan *Message)
-	incoming := make(chan *Message, 64)
 
 	s := Software{
 		name:    "frr",
@@ -820,33 +766,47 @@ func main() {
 
 	c := &Client{
 		outgoing:      outgoing,
-		incoming:      incoming,
 		redistDefault: RouteBGP,
 		conn:          conn,
 		Version:       6,
 		Software:      s,
 	}
 
-	go func() {
-		for {
-			m, more := <-outgoing // c.sendhello() 後
-			if more {
-				b, err := m.serialize(s)
-				if err != nil {
-					continue
-				}
+	return c, nil
 
-				_, err = conn.Write(b)
-				fmt.Printf("sendbuf:%v\n", b)
+}
+
+func (c *Client) zebraClientLoop() error {
+
+	for {
+		m, more := <-c.outgoing // c.send...で受け取るようになっている
+		if more {
+			b, err := m.serialize(c.Software)
+			if err != nil {
+				return nil
 			}
+
+			_, err = c.conn.Write(b)
+			fmt.Printf("sendbuf:%v\n", b)
 		}
-	}()
+	}
+
+}
+
+func main() {
+
+	c, err := zebraClientInit()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	go c.zebraClientLoop()
 
 	c.SendHello()
 	c.SendRouteAdd()
 
 	for {
-		headerBuf, err := readAll(conn, int(HeaderSize(6)))
+		headerBuf, err := readAll(c.conn, int(HeaderSize(6)))
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -856,12 +816,38 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		bodyBuf, err := readAll(conn, int(hd.Len-HeaderSize(6)))
+		bodyBuf, err := readAll(c.conn, int(hd.Len-HeaderSize(6)))
 		if err != nil {
 			log.Fatal(err)
 		}
 		log.Print("body:%v", bodyBuf)
 
 	}
+
+	//	listener, err := net.Listen("unix", "/tmp/test.sock")
+	//	if err != nil {
+	//		log.Fatal(err)
+	//	}
+
+	//	quit := make(chan os.Signal)
+	//	signal.Notify(quit, os.Interrupt)
+	//	go func() {
+	//		<-quit
+	//		os.Remove("/tmp/test.sock")
+	//		os.Exit(1)
+	//	}()
+	//
+	//	for {
+	//		//
+	//		conn, err := listener.Accept()
+	//		//
+	//		if err != nil {
+	//			log.Fatal(err)
+	//		}
+	//		//
+	//		go ReadAll(conn)
+	//	}
+
+	// main だけに書くな！
 
 }
