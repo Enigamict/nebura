@@ -11,9 +11,10 @@ type Data struct {
 }
 
 type Conf struct {
-	Select string     `yaml:"select"`
-	Static bool       `yaml:"static"`
-	Prefix ConfPrefix `yaml:"prefix"`
+	Select      string     `yaml:"select"`
+	Static      bool       `yaml:"static"`
+	DeviceIndex int        `yaml:"DeviceIndex"`
+	Prefix      ConfPrefix `yaml:"prefix"`
 }
 
 type ConfPrefix struct {
@@ -23,7 +24,7 @@ type ConfPrefix struct {
 
 func ReadConfing() (Conf, error) {
 
-	buf, err := ioutil.ReadFile("../../conf/test.yaml")
+	buf, err := ioutil.ReadFile("../../conf/static.yaml")
 	if err != nil {
 		panic(err)
 	}

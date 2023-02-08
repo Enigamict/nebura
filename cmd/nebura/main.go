@@ -20,7 +20,7 @@ func main() {
 	switch s.Select {
 	case "nebura":
 		if s.Static {
-			err := nebura.NetlinkSendStaticRouteAdd(s.Prefix.DstPrefix, s.Prefix.SrcPrefix)
+			err := nebura.NetlinkSendStaticRouteAdd(s.Prefix.DstPrefix, s.Prefix.SrcPrefix, uint8(s.DeviceIndex))
 
 			if err != nil {
 				log.Fatal(err)

@@ -32,9 +32,10 @@ type ApiHeader struct {
 	Type uint8
 }
 
-func NetlinkSendStaticRouteAdd(dstPrefix string, srcPrefix string) error {
+func NetlinkSendStaticRouteAdd(dstPrefix string, srcPrefix string, index uint8) error {
 
-	C.ipv4_route_add(C.CString(dstPrefix), C.CString(srcPrefix), C.int(2))
+	C.ipv4_route_add(C.CString(dstPrefix), C.CString(srcPrefix), C.int(index))
+
 	return nil
 }
 
@@ -101,6 +102,17 @@ func NeburaByteRead(conn net.Conn) {
 	neburaEvent(hd, hdr)
 }
 
+func signalNotify() {
+	quit := make(chan os.Signal)
+	signal.Notify(quit, os.Interrupt)
+	go func() {
+		<-quit
+		os.Remove("/tmp/test.sock")
+		os.Exit(1)
+	}()
+
+}
+
 func NserverStart() error {
 
 	listener, err := net.Listen("unix", "/tmp/test.sock")
@@ -109,13 +121,7 @@ func NserverStart() error {
 		return err
 	}
 
-	quit := make(chan os.Signal)
-	signal.Notify(quit, os.Interrupt)
-	go func() {
-		<-quit
-		os.Remove("/tmp/test.sock")
-		os.Exit(1)
-	}()
+	go signalNotify()
 
 	for {
 		conn, err := listener.Accept()
