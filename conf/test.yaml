@@ -1,0 +1,7 @@
+config:
+    -
+        select: nebura
+        static: true
+        preifx:
+        srcprefix: "192.168.64.6"
+        dstprefix: "1.2.3.4"
