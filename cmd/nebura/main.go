@@ -19,17 +19,19 @@ func main() {
 
 	switch s.Select {
 	case "nebura":
-		if s.Static {
-			err := nebura.NetlinkSendStaticRouteAdd(s.Prefix.DstPrefix, s.Prefix.SrcPrefix, uint8(s.DeviceIndex))
+		switch s.Static {
+		case true:
+			//err := nebura.NetlinkSendStaticRouteAdd(s.Prefix.DstPrefix, s.Prefix.SrcPrefix, uint8(s.DeviceIndex))
 
 			if err != nil {
 				log.Fatal(err)
 			}
-		}
-		err := nebura.NserverStart()
+		default:
+			err := nebura.NserverStart()
 
-		if err != nil {
-			log.Fatal(err)
+			if err != nil {
+				log.Fatal(err)
+			}
 		}
 	case "zebra":
 		c, err := zebra.ZebraClientInit()

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"io/ioutil"
 
 	"gopkg.in/yaml.v2"
@@ -14,12 +15,12 @@ type Conf struct {
 	Select      string     `yaml:"select"`
 	Static      bool       `yaml:"static"`
 	DeviceIndex int        `yaml:"DeviceIndex"`
-	Prefix      ConfPrefix `yaml:"prefix"`
+	Prefix      ConfPrefix `yaml:"preifx"`
 }
 
 type ConfPrefix struct {
 	SrcPrefix string `yaml:"srcprefix"`
-	DstPrefix string `yaml:"dstprefix"`
+	DstPrefix bool   `yaml:"dstprefix"`
 }
 
 func ReadConfing() (Conf, error) {
@@ -34,6 +35,7 @@ func ReadConfing() (Conf, error) {
 	if err != nil {
 		panic(err)
 	}
+	fmt.Printf("%v", d.Conf[0].Prefix)
 
 	return d.Conf[0], nil
 }

@@ -1,8 +1,8 @@
 config:
     -
-        select: zebra
-        static: true
+        select: nebura
+        static: false
         DeviceIndex: 2
         preifx:
-        srcprefix: "192.168.64.6"
-        dstprefix: "1.2.3.4"
+            srcprefix: "192.168.64.1"
+            dstprefix: true

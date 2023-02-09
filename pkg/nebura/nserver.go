@@ -15,6 +15,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"sync"
 )
 
 type ApiType uint8
@@ -32,6 +33,16 @@ type ApiHeader struct {
 	Type uint8
 }
 
+type RIBPrefix struct {
+	PrefixLen uint8
+	Prefix    net.IP
+}
+
+type Rib struct {
+	mu     *sync.Mutex
+	Preifx map[int]*RIBPrefix
+}
+
 func NetlinkSendStaticRouteAdd(dstPrefix string, srcPrefix string, index uint8) error {
 
 	C.ipv4_route_add(C.CString(dstPrefix), C.CString(srcPrefix), C.int(index))
@@ -39,21 +50,56 @@ func NetlinkSendStaticRouteAdd(dstPrefix string, srcPrefix string, index uint8) 
 	return nil
 }
 
+func prefixPadding(data []byte) net.IP {
+	return net.IP(data).To4()
+}
+
+func (r *Rib) RibShow() {
+
+	for k, v := range r.Preifx {
+		fmt.Printf("key: %v, value: %v\n", k, v)
+	}
+}
+
+var RibCount = 0
+
+func (r *Rib) RibAdd(addRoute *RIBPrefix) error {
+
+	defer r.mu.Unlock()
+	r.mu.Lock()
+
+	RibCount++
+
+	for i := 0; i < RibCount; i++ {
+		r.Preifx[i] = addRoute
+	}
+
+	return nil
+}
+
+func RibInit() *Rib {
+	return &Rib{
+		mu:     new(sync.Mutex),
+		Preifx: make(map[int]*RIBPrefix),
+	}
+}
+
 func NetlinkSendRouteAdd(data []byte) error {
 
-	ipSrcBuf := make([]byte, 4)
-	ipDstBuf := make([]byte, 4)
+	dstPrefix := prefixPadding(data[4:8])
+	srcPrefix := prefixPadding(data[9:13])
 
-	copy(ipDstBuf, data[4:8])
-	dstPrefix := net.IP(ipDstBuf).To4()
-	copy(ipSrcBuf, data[9:13])
-	srcPrefix := net.IP(ipSrcBuf).To4()
-	fmt.Printf("%v", data)
-	fmt.Printf("%v", dstPrefix.String())
-	fmt.Printf("%v", srcPrefix.String())
+	index := int(data[13])
 
-	var index uint8
-	index = data[13]
+	r := RibInit()
+	a := &RIBPrefix{
+		Prefix:    dstPrefix,
+		PrefixLen: uint8(32),
+	}
+
+	r.RibAdd(a)
+
+	r.RibShow()
 
 	C.ipv4_route_add(C.CString(dstPrefix.String()), C.CString(srcPrefix.String()), C.int(index))
 	return nil
