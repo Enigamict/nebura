@@ -21,7 +21,7 @@ func main() {
 	case "nebura":
 		switch s.Static {
 		case true:
-			//err := nebura.NetlinkSendStaticRouteAdd(s.Prefix.DstPrefix, s.Prefix.SrcPrefix, uint8(s.DeviceIndex))
+			err := nebura.NetlinkSendStaticRouteAdd(s.Prefix.SrcPrefix, s.Prefix.SrcPrefix, uint8(s.DeviceIndex))
 
 			if err != nil {
 				log.Fatal(err)

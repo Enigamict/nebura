@@ -2,7 +2,6 @@ package nebura
 
 import (
 	"encoding/binary"
-	"fmt"
 	"io"
 	"log"
 	"net"
@@ -25,7 +24,7 @@ const (
 	sockAddr = "/tmp/test.sock"
 )
 
-func Write(c net.Conn) error {
+func Write(c net.Conn, b *Update) error {
 
 	var buf []byte
 	buf = make([]byte, 3)
@@ -35,11 +34,11 @@ func Write(c net.Conn) error {
 
 	ApiHdr := &StaticRouteAdd{
 		Prefix: Prefix{
-			Prefix:    net.ParseIP("8.7.6.7").To4(),
-			PrefixLen: uint8(32),
+			Prefix:    b.NLRI.NLRI,
+			PrefixLen: uint8(b.NLRI.Len),
 		},
 		srcPrefix: Prefix{
-			Prefix:    net.ParseIP("192.168.64.6").To4(),
+			Prefix:    b.Nexthop,
 			PrefixLen: uint8(24),
 		},
 		index: uint8(2),
@@ -71,27 +70,19 @@ func NeburaClientRead(c net.Conn) ([]byte, error) {
 
 	return buf, nil
 }
-func main() {
 
+func NclientSendMsg(b *Update) error {
 	conn, err := net.Dial(protocol, sockAddr)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	func() {
-		err = Write(conn)
+		err = Write(conn, b)
 		if err != nil {
 			log.Fatal(err)
 		}
 
 	}()
-
-	for {
-		hdr, err := NeburaClientRead(conn)
-		if err != nil {
-			log.Println(err)
-		}
-		fmt.Printf("%v", hdr)
-	}
-
+	return nil
 }

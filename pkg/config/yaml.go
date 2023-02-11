@@ -15,12 +15,12 @@ type Conf struct {
 	Select      string     `yaml:"select"`
 	Static      bool       `yaml:"static"`
 	DeviceIndex int        `yaml:"DeviceIndex"`
-	Prefix      ConfPrefix `yaml:"preifx"`
+	Prefix      ConfPrefix `yaml:"prefix"`
 }
 
 type ConfPrefix struct {
 	SrcPrefix string `yaml:"srcprefix"`
-	DstPrefix bool   `yaml:"dstprefix"`
+	DstPrefix string `yaml:"dstprefix"`
 }
 
 func ReadConfing() (Conf, error) {
