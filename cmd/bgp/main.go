@@ -1,14 +1,21 @@
 package main
 
 import (
+	"log"
 	"net"
 
+	"github.com/Enigamict/zebraland/pkg/config"
 	"github.com/Enigamict/zebraland/pkg/nebura"
 )
 
 func main() {
 
-	p := nebura.PeerInit(65000, net.ParseIP("10.255.3.4").To4(), net.ParseIP("10.255.3.1"))
+	c, err := config.BgpConfing("../../conf/bgp.yaml")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	p := nebura.PeerInit(65000, net.ParseIP(c.Id).To4(), net.ParseIP(c.PeerPrefix.NeiAddr))
 
 	p.PeerListen()
 }

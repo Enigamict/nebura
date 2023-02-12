@@ -96,11 +96,11 @@ func NetlinkSendRouteAdd(data []byte) error {
 		Prefix:    dstPrefix,
 		PrefixLen: uint8(32),
 	}
+
 	fmt.Printf("%v", dstPrefix.String())
 	fmt.Printf("%v", srcPrefix.String())
 
 	r.RibAdd(a)
-
 	r.RibShow()
 
 	//C.ipv4_route_add(C.CString(dstPrefix.String()), C.CString(srcPrefix.String()), C.int(index))

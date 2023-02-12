@@ -26,3 +26,9 @@ struct netlink_msg{
 struct rtnl_handle{
     int fd;
 };
+
+struct iplink_req {
+	struct nlmsghdr		n;
+	struct ifinfomsg	i;
+	char			buf[1024];
+};

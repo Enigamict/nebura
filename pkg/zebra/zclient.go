@@ -185,18 +185,8 @@ func (h *Header) writeTo() ([]byte, error) {
 	binary.BigEndian.PutUint16(buf[0:2], h.Len)
 	buf[2] = h.Marker
 	buf[3] = h.Version
-	switch h.Version {
-	case 2:
-		binary.BigEndian.PutUint16(buf[4:6], uint16(h.Command))
-	case 3, 4:
-		binary.BigEndian.PutUint16(buf[4:6], uint16(h.VrfID))
-		binary.BigEndian.PutUint16(buf[6:8], uint16(h.Command))
-	case 5, 6:
-		binary.BigEndian.PutUint32(buf[4:8], uint32(h.VrfID))
-		binary.BigEndian.PutUint16(buf[8:10], uint16(h.Command))
-	default:
-		return nil, fmt.Errorf("unsupported ZAPI version: %d", h.Version)
-	}
+	binary.BigEndian.PutUint32(buf[4:8], uint32(h.VrfID))
+	binary.BigEndian.PutUint16(buf[8:10], uint16(h.Command))
 	return buf, nil
 }
 

@@ -11,7 +11,7 @@ import (
 func main() {
 
 	// ZebraかNeburaを選択する
-	s, err := config.ReadConfing()
+	s, err := config.ReadConfing("../../conf/static.yaml")
 
 	if err != nil {
 		log.Fatal(err)
