@@ -1,6 +1,6 @@
 config:
     -
-        select: nebura
+        select: zebra
         static: false
         DeviceIndex: 2
         prefix:

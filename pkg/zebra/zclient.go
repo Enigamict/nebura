@@ -2,7 +2,6 @@ package zebra
 
 import (
 	"encoding/binary"
-	"fmt"
 	"io"
 	"log"
 	"net"
@@ -128,7 +127,7 @@ type Header struct {
 }
 
 type Body interface {
-	writeTo(uint8, Software) ([]byte, error)
+	writeTo() ([]byte, error)
 }
 
 type Message struct {
@@ -165,7 +164,6 @@ type BGPRouteBody struct {
 }
 
 type BgpClient struct {
-	outgoing  chan *Message
 	routeType RouteType
 	Conn      net.Conn
 	Version   uint8
@@ -190,11 +188,11 @@ func (h *Header) writeTo() ([]byte, error) {
 	return buf, nil
 }
 
-func (m *Message) writeTo(software Software) ([]byte, error) {
+func (m *Message) writeTo() ([]byte, error) {
 	var body []byte
 	if m.Body != nil {
 		var err error
-		body, err = m.Body.writeTo(m.Header.Version, software)
+		body, err = m.Body.writeTo()
 		if err != nil {
 			return nil, err
 		}
@@ -207,7 +205,7 @@ func (m *Message) writeTo(software Software) ([]byte, error) {
 	return append(hdr, body...), nil
 }
 
-func (b *helloBody) writeTo(version uint8, software Software) ([]byte, error) {
+func (b *helloBody) writeTo() ([]byte, error) {
 	var buf []byte
 	buf = make([]byte, 9)
 	buf[0] = uint8(b.routeType)
@@ -216,10 +214,6 @@ func (b *helloBody) writeTo(version uint8, software Software) ([]byte, error) {
 	buf[7] = b.receiveNotify
 	buf[8] = b.synchronous
 	return buf, nil
-}
-
-func (c *BgpClient) send(m *Message) {
-	c.outgoing <- m
 }
 
 func (c *BgpClient) sendCommand(command APIType, vrfID uint32, body Body) error {
@@ -233,7 +227,9 @@ func (c *BgpClient) sendCommand(command APIType, vrfID uint32, body Body) error 
 		},
 		Body: body,
 	}
-	c.send(m)
+
+	buf, _ := m.writeTo()
+	c.Conn.Write(buf)
 	return nil
 }
 
@@ -254,22 +250,9 @@ const (
 	nexthopProcessIFnameToIFindex nexthopProcessFlag = 0x20 // for quagga
 )
 
-func nexthopProcessFlagForBGPRouteBody(version uint8, software Software, isDecode bool) nexthopProcessFlag {
-	if version < 5 {
-		if isDecode {
-			return nexthopProcessFlag(0) // frr3&quagga don't have type&vrfid
-		}
-		return nexthopHasType // frr3&quagga need type for encode(serialize)
-	}
-	processFlag := (nexthopHasVrfID | nexthopHasType) // frr4, 5, 6, 7
-	if version == 6 && software.name == "frr" {
-		if software.version >= 7.3 {
-			processFlag |= (nexthopHasFlag | nexthopProcessIPToIPIFindex)
-		} else if software.version >= 7.1 {
-			processFlag |= nexthopHasOnlink
-		}
-	}
-	// nexthopHasType nexthopProcessIPToIPIFindex
+func nexthopProcessFlagForBGPRouteBody() nexthopProcessFlag {
+	processFlag := (nexthopHasVrfID | nexthopHasType)
+	processFlag |= (nexthopHasFlag | nexthopProcessIPToIPIFindex)
 	return processFlag
 }
 
@@ -402,7 +385,7 @@ func (t nexthopType) toEach(version uint8) nexthopType {
 	}
 	return nexthopType(0) // error for conversion
 }
-func (n Nexthop) encode(version uint8, software Software, processFlag nexthopProcessFlag, message MessageFlag, apiFlag Flag) []byte {
+func (n Nexthop) encode(processFlag nexthopProcessFlag, message MessageFlag, apiFlag Flag) []byte {
 	var buf []byte
 	if processFlag&nexthopHasVrfID > 0 {
 		tmpbuf := make([]byte, 4)
@@ -411,7 +394,7 @@ func (n Nexthop) encode(version uint8, software Software, processFlag nexthopPro
 	}
 	if processFlag&nexthopHasType > 0 {
 		if n.Type == nexthopType(0) {
-			n.Type = n.gateToType(version)
+			n.Type = n.gateToType(6)
 		}
 		buf = append(buf, uint8(n.Type)) //frr: stream_putc(s, api_nh->type);
 	}
@@ -425,9 +408,8 @@ func (n Nexthop) encode(version uint8, software Software, processFlag nexthopPro
 		nhType = nhType.ipToIPIFIndex()
 	}
 
-	if nhType == nexthopTypeIPv4.toEach(version) ||
-		nhType == nexthopTypeIPv4IFIndex.toEach(version) {
-		//frr: stream_put_in_addr(s, &api_nh->gate.ipv4);
+	if nhType == nexthopTypeIPv4.toEach(6) ||
+		nhType == nexthopTypeIPv4IFIndex.toEach(6) {
 		buf = append(buf, n.Gate.To4()...)
 	}
 
@@ -456,7 +438,7 @@ func (f MessageFlag) ToEach(version uint8, software Software) MessageFlag {
 	}
 	return f
 }
-func (b *BGPRouteBody) writeTo(version uint8, software Software) ([]byte, error) {
+func (b *BGPRouteBody) writeTo() ([]byte, error) {
 	var buf []byte
 	numNexthop := len(b.Nexthops)
 
@@ -479,12 +461,12 @@ func (b *BGPRouteBody) writeTo(version uint8, software Software) ([]byte, error)
 	buf = append(buf, b.Prefix.PrefixLen) //frr: stream_putc(s, api->prefix.prefixlen);
 	buf = append(buf, b.Prefix.Prefix[:byteLen]...)
 
-	processFlag := nexthopProcessFlagForBGPRouteBody(version, software, false)
+	processFlag := nexthopProcessFlagForBGPRouteBody()
 	tmpbuf := make([]byte, 2)
 	binary.BigEndian.PutUint16(tmpbuf, uint16(numNexthop))
 	buf = append(buf, tmpbuf...) //frr: stream_putw(s, api->nexthop_num);
 	for _, nexthop := range b.Nexthops {
-		buf = append(buf, nexthop.encode(version, software, processFlag, b.Message, b.Flags)...)
+		buf = append(buf, nexthop.encode(processFlag, b.Message, b.Flags)...)
 	}
 
 	metricbuf := make([]byte, 8)
@@ -514,12 +496,12 @@ func (c *BgpClient) SendRouteAdd() error {
 		Safi:     SafiUnicast,
 		instance: 0,
 		Prefix: Prefix{
-			Prefix:    net.ParseIP("5.4.3.7").To4(),
+			Prefix:    net.ParseIP("5.4.3.9").To4(),
 			PrefixLen: uint8(32),
 		},
 		Nexthops: []Nexthop{
 			{
-				Gate: net.ParseIP("192.168.64.6"),
+				Gate: net.ParseIP("192.168.64.2"),
 			},
 		},
 		Distance: uint8(0),
@@ -536,37 +518,12 @@ func ZebraClientInit() (*BgpClient, error) {
 		log.Fatal(err)
 	}
 
-	outgoing := make(chan *Message)
-
-	s := Software{
-		name:    "frr",
-		version: 8.1,
-	}
-
 	c := &BgpClient{
-		outgoing:  outgoing,
 		routeType: RouteBGP,
 		Conn:      conn,
 		Version:   6,
-		Software:  s,
 	}
 
 	return c, nil
 
-}
-
-func (c *BgpClient) ZebraClientLoop() error {
-
-	for {
-		m, more := <-c.outgoing // c.send...で受け取るようになっている
-		if more {
-			b, err := m.writeTo(c.Software)
-			if err != nil {
-				return nil
-			}
-
-			_, err = c.Conn.Write(b)
-			fmt.Printf("sendbuf:%v\n", b)
-		}
-	}
 }

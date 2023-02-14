@@ -89,7 +89,7 @@ func NetlinkSendRouteAdd(data []byte) error {
 	dstPrefix := prefixPadding(data[4:8])
 	srcPrefix := prefixPadding(data[9:13])
 
-	//index := int(data[13])
+	index := int(data[13])
 
 	r := RibInit()
 	a := &RIBPrefix{
@@ -103,7 +103,7 @@ func NetlinkSendRouteAdd(data []byte) error {
 	r.RibAdd(a)
 	r.RibShow()
 
-	//C.ipv4_route_add(C.CString(dstPrefix.String()), C.CString(srcPrefix.String()), C.int(index))
+	C.ipv4_route_add(C.CString(dstPrefix.String()), C.CString(srcPrefix.String()), C.int(index))
 	return nil
 }
 

@@ -2,10 +2,11 @@ package nebura
 
 import (
 	"encoding/binary"
-	"fmt"
 	"io"
 	"log"
 	"net"
+
+	"github.com/Enigamict/zebraland/pkg/zebra"
 )
 
 const (
@@ -21,6 +22,7 @@ type Peer struct {
 	AS        uint16
 	IdenTifer net.IP
 	NeiAdrees net.IP
+	Select    string
 	Conn      net.Conn
 }
 
@@ -56,11 +58,12 @@ type Update struct {
 	NLRI    NLRIPrefix
 }
 
-func PeerInit(as uint16, iden net.IP, peer net.IP) *Peer {
+func PeerInit(as uint16, iden net.IP, peer net.IP, routing string) *Peer {
 
 	p := &Peer{
 		AS:        as,
 		IdenTifer: iden,
+		Select:    routing,
 		NeiAdrees: peer,
 	}
 	return p
@@ -87,8 +90,8 @@ func (m *Message) writeTo() ([]byte, error) {
 	headerbuf, _ = m.Hdr.writeTo()
 	msgbuf, _ = m.Msg.writeTo()
 
-	buf = append(buf, headerbuf...) //frr: stream_putc(s, api_nh->type);
-	buf = append(buf, msgbuf...)    //frr: stream_putc(s, api_nh->type);
+	buf = append(buf, headerbuf...)
+	buf = append(buf, msgbuf...)
 	return buf, nil
 }
 
@@ -125,7 +128,6 @@ func (p *Peer) SendMsg(len uint16, bgpType uint8, m BgpMsg) error {
 
 	buf, _ := s.writeTo()
 	p.Conn.Write(buf)
-	fmt.Printf("%v", buf)
 	return nil
 }
 
@@ -145,19 +147,11 @@ func (p *Peer) BgpSendOpenMsg() error {
 
 func (p *Peer) BgpSendkeepAliveMsg() error {
 
-	s := &Message{
-		Hdr: Hdr{
-			Len:  bgpHederSize,
-			Type: BgpKeepAliveType,
-		},
-		Msg: &KeepAlive{},
-	}
-	buf, _ := s.writeTo()
-	p.Conn.Write(buf)
+	p.SendMsg(bgpHederSize, BgpKeepAliveType, &KeepAlive{})
 	return nil
 }
 
-func BgpupdateParse(data []byte) error {
+func BgpupdateParse(data []byte, routing string) error {
 
 	b := &Update{
 		Nexthop: prefixPadding(data[18:22]),
@@ -166,7 +160,22 @@ func BgpupdateParse(data []byte) error {
 			NLRI: prefixPadding(data[23:27]),
 		},
 	}
-	NclientSendMsg(b)
+
+	switch routing {
+	case "nebura":
+		NclientSendMsg(b)
+	case "zebra":
+
+		c, err := zebra.ZebraClientInit()
+
+		if err != nil {
+			log.Fatal(err)
+		}
+		log.Printf("Zebra Conect...\n")
+
+		c.SendHello()
+		c.SendRouteAdd()
+	}
 	return nil
 }
 
@@ -177,6 +186,9 @@ func (p *Peer) PeerListen() error {
 
 	var err error
 	p.Conn, err = net.Dial("tcp", p.NeiAdrees.String()+":179")
+
+	log.Printf("BGP Peer Listen...\n")
+	log.Printf("Listen addr %s...\n", p.NeiAdrees.String())
 
 	if err != nil {
 		log.Fatal(err)
@@ -189,11 +201,13 @@ func (p *Peer) PeerListen() error {
 		if _, err := io.ReadFull(p.Conn, header[:]); err != nil {
 			return nil
 		}
+
 		for i := 0; i < 16; i++ {
 			if header[i] != 0xFF {
 				return nil
 			}
 		}
+
 		size := binary.BigEndian.Uint16(header[16:18])
 		if size < bgpHederSize || size > 4096 {
 			return nil
@@ -210,7 +224,7 @@ func (p *Peer) PeerListen() error {
 		case BgpKeepAliveType:
 			p.BgpSendkeepAliveMsg()
 		case BgpUpdateType:
-			BgpupdateParse(buf)
+			BgpupdateParse(buf, p.Select)
 		}
 	}
 

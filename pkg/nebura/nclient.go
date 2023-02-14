@@ -41,7 +41,7 @@ func Write(c net.Conn, b *Update) error {
 			Prefix:    b.Nexthop,
 			PrefixLen: uint8(24),
 		},
-		index: uint8(2),
+		index: uint8(40),
 	}
 
 	dstBlen := (int(ApiHdr.Prefix.PrefixLen) + 7) / 8

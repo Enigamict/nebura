@@ -40,7 +40,6 @@ func main() {
 			log.Fatal(err)
 		}
 
-		go c.ZebraClientLoop()
 		c.SendHello()
 		c.SendRouteAdd()
 

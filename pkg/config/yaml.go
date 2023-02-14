@@ -14,6 +14,7 @@ type BgpConf struct {
 type PeerConf struct {
 	Select     string     `yaml:"select"`
 	Id         string     `yaml:"id"`
+	As         uint16     `yaml:"as"`
 	PeerPrefix PeerPrefix `yaml:"peer"`
 }
 type PeerPrefix struct {
