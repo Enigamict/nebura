@@ -97,9 +97,6 @@ func NetlinkSendRouteAdd(data []byte) error {
 		PrefixLen: uint8(32),
 	}
 
-	fmt.Printf("%v", dstPrefix.String())
-	fmt.Printf("%v", srcPrefix.String())
-
 	r.RibAdd(a)
 	r.RibShow()
 
@@ -116,9 +113,7 @@ func (b *ApiHeader) DecodeApiHdr(data []byte) error {
 
 func NeburaRead(c net.Conn) ([]byte, error) {
 	buf := make([]byte, NeburaHdrSize)
-
 	_, err := io.ReadFull(c, buf)
-
 	if err != nil {
 		return nil, err
 	}
@@ -130,6 +125,8 @@ func neburaEvent(h *ApiHeader, data []byte) {
 
 	switch h.Type {
 	case staticRouteAdd:
+		NetlinkSendRouteAdd(data)
+	case bgpRouteAdd:
 		NetlinkSendRouteAdd(data)
 	default:
 		log.Printf("not type")

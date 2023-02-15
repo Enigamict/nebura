@@ -9,6 +9,8 @@ import (
 )
 
 func Neburainit() {
+
+	// start nebura
 	err := nebura.NserverStart()
 
 	if err != nil {
@@ -18,8 +20,6 @@ func Neburainit() {
 
 func main() {
 
-	// start nebura
-
 	c, err := config.BgpConfing("../../conf/bgp.yaml")
 	if err != nil {
 		log.Fatal(err)
@@ -28,6 +28,7 @@ func main() {
 	switch c.Select {
 	case "nebura":
 		go Neburainit()
+
 		p := nebura.PeerInit(c.As, net.ParseIP(c.Id).To4(), net.ParseIP(c.PeerPrefix.NeiAddr), c.Select)
 		p.PeerListen()
 	case "zebra":

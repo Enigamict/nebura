@@ -1,7 +1,6 @@
 package config
 
 import (
-	"fmt"
 	"io/ioutil"
 
 	"gopkg.in/yaml.v2"
@@ -49,7 +48,6 @@ func ReadConfing(pass string) (Conf, error) {
 	if err != nil {
 		panic(err)
 	}
-	fmt.Printf("%v", d.Conf[0].Prefix)
 
 	return d.Conf[0], nil
 }
@@ -66,7 +64,6 @@ func BgpConfing(pass string) (PeerConf, error) {
 	if err != nil {
 		panic(err)
 	}
-	fmt.Printf("%v", d.BgpConf[0].PeerPrefix)
 
 	return d.BgpConf[0], nil
 }

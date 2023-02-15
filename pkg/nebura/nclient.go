@@ -2,7 +2,6 @@ package nebura
 
 import (
 	"encoding/binary"
-	"io"
 	"log"
 	"net"
 )
@@ -13,26 +12,21 @@ type Prefix struct {
 	Prefix    net.IP
 }
 
-type StaticRouteAdd struct {
+type RouteAdd struct {
 	Prefix    Prefix
 	srcPrefix Prefix
 	index     uint8
 }
 
-const (
-	protocol = "unix"
-	sockAddr = "/tmp/test.sock"
-)
-
-func Write(c net.Conn, b *Update) error {
+func SendNclientMsg(c net.Conn, b *Update) error {
 
 	var buf []byte
 	buf = make([]byte, 3)
 
-	binary.BigEndian.PutUint16(buf[0:2], 1)
-	buf[2] = uint8(1)
+	binary.BigEndian.PutUint16(buf[0:2], 15)
+	buf[2] = uint8(2)
 
-	ApiHdr := &StaticRouteAdd{
+	ApiHdr := &RouteAdd{
 		Prefix: Prefix{
 			Prefix:    b.NLRI.NLRI,
 			PrefixLen: uint8(b.NLRI.Len),
@@ -51,6 +45,7 @@ func Write(c net.Conn, b *Update) error {
 	buf = append(buf, ApiHdr.srcPrefix.PrefixLen)
 	buf = append(buf, ApiHdr.srcPrefix.Prefix[:dstBlen]...)
 	buf = append(buf, ApiHdr.index)
+
 	_, err := c.Write(buf)
 
 	if err != nil {
@@ -59,30 +54,19 @@ func Write(c net.Conn, b *Update) error {
 	return nil
 }
 
-func NeburaClientRead(c net.Conn) ([]byte, error) {
-	buf := make([]byte, 3)
+func NclientConect(b *Update) error {
 
-	_, err := io.ReadFull(c, buf)
+	conn, err := net.Dial("unix", "/tmp/test.sock")
 
-	if err != nil {
-		return nil, err
-	}
-
-	return buf, nil
-}
-
-func NclientSendMsg(b *Update) error {
-	conn, err := net.Dial(protocol, sockAddr)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	func() {
-		err = Write(conn, b)
-		if err != nil {
-			log.Fatal(err)
-		}
+	err = SendNclientMsg(conn, b)
 
-	}()
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	return nil
 }

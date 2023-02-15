@@ -1,3 +1,7 @@
+// The overall Zclient communication section and implementation is based on the Zebra communication
+// section of GoBGP.
+// If there are any problems, etc., please let me know.
+
 package zebra
 
 import (
@@ -442,29 +446,25 @@ func (b *BGPRouteBody) writeTo() ([]byte, error) {
 	var buf []byte
 	numNexthop := len(b.Nexthops)
 
-	bufInitSize := 12 //type(1)+instance(2)+flags(4)+message(4)+safi(1), frr7.4&newer
+	bufInitSize := 12
 	buf = make([]byte, bufInitSize)
 
-	buf[0] = uint8(RouteBGP) //frr: stream_putc(s, api->type);
-	//frr: stream_putw(s, api->instance);
+	buf[0] = uint8(RouteBGP)
 	binary.BigEndian.PutUint16(buf[1:3], uint16(b.instance))
-	//frr: stream_putl(s, api->flags);
 	binary.BigEndian.PutUint32(buf[3:7], uint32(b.Flags))
-	//frr7.5 and newer: stream_putl(s, api->message);
 	binary.BigEndian.PutUint32(buf[7:11], uint32(5))
-	buf[11] = uint8(b.Safi) //stream_putc(s, api->safi);
+	buf[11] = uint8(b.Safi)
 	b.Prefix.Family = familyFromPrefix(b.Prefix.Prefix)
-	//frr: stream_putc(s, api->prefix.family);
 	buf = append(buf, b.Prefix.Family)
 
 	byteLen := (int(b.Prefix.PrefixLen) + 7) / 8
-	buf = append(buf, b.Prefix.PrefixLen) //frr: stream_putc(s, api->prefix.prefixlen);
+	buf = append(buf, b.Prefix.PrefixLen)
 	buf = append(buf, b.Prefix.Prefix[:byteLen]...)
 
 	processFlag := nexthopProcessFlagForBGPRouteBody()
 	tmpbuf := make([]byte, 2)
 	binary.BigEndian.PutUint16(tmpbuf, uint16(numNexthop))
-	buf = append(buf, tmpbuf...) //frr: stream_putw(s, api->nexthop_num);
+	buf = append(buf, tmpbuf...)
 	for _, nexthop := range b.Nexthops {
 		buf = append(buf, nexthop.encode(processFlag, b.Message, b.Flags)...)
 	}
@@ -487,7 +487,7 @@ func (c *BgpClient) SendHello() error {
 	return nil
 }
 
-func (c *BgpClient) SendRouteAdd() error {
+func (c *BgpClient) SendRouteAdd(prefix string, nexthop string) error {
 
 	body := &BGPRouteBody{
 		Type:     RouteBGP,
@@ -496,12 +496,12 @@ func (c *BgpClient) SendRouteAdd() error {
 		Safi:     SafiUnicast,
 		instance: 0,
 		Prefix: Prefix{
-			Prefix:    net.ParseIP("5.4.3.9").To4(),
+			Prefix:    net.ParseIP(prefix).To4(),
 			PrefixLen: uint8(32),
 		},
 		Nexthops: []Nexthop{
 			{
-				Gate: net.ParseIP("192.168.64.2"),
+				Gate: net.ParseIP(nexthop),
 			},
 		},
 		Distance: uint8(0),

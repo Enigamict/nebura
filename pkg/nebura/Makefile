@@ -5,10 +5,10 @@ OBJS = $(SRCS:%.c=%.o)
 
 all :
 	$(CC) $(CFLAGS) -I ./ -c ipv4add.c libnetlink.c 
-	ar rcs libipv4add.a $(OBJS)
+	ar rcs libipv4add.a  $(OBJS)
 	cd ../../cmd/nebura/ && go build
 
 
 .PHONY: clean
 clean:
-	rm $(OBJS) libipv4add.a
+	rm $(OBJS) libipv4add.a 

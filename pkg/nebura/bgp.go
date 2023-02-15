@@ -2,11 +2,20 @@ package nebura
 
 import (
 	"encoding/binary"
+	"fmt"
 	"io"
 	"log"
 	"net"
 
 	"github.com/Enigamict/zebraland/pkg/zebra"
+)
+
+type BgpType uint8
+
+const (
+	BgpOpenType      = 1
+	BgpUpdateType    = 2
+	BgpKeepAliveType = 4
 )
 
 const (
@@ -48,6 +57,7 @@ type Open struct {
 
 type KeepAlive struct {
 }
+
 type NLRIPrefix struct {
 	Len  uint8
 	NLRI net.IP
@@ -114,7 +124,6 @@ func (k *KeepAlive) writeTo() ([]byte, error) {
 
 const Hdrlen = 19
 const OpenHdrlen = 10
-const OpenType = 1
 
 func (p *Peer) SendMsg(len uint16, bgpType uint8, m BgpMsg) error {
 
@@ -141,13 +150,13 @@ func (p *Peer) BgpSendOpenMsg() error {
 		OptParamLength: uint8(0),
 	}
 
-	p.SendMsg(bgpHederSize+10, OpenType, Open)
+	p.SendMsg(bgpHederSize+10, uint8(BgpOpenType), Open)
 	return nil
 }
 
 func (p *Peer) BgpSendkeepAliveMsg() error {
 
-	p.SendMsg(bgpHederSize, BgpKeepAliveType, &KeepAlive{})
+	p.SendMsg(bgpHederSize, uint8(BgpKeepAliveType), &KeepAlive{})
 	return nil
 }
 
@@ -161,9 +170,15 @@ func BgpupdateParse(data []byte, routing string) error {
 		},
 	}
 
+	index, _ := NexthopPrefixIndex(string(b.Nexthop))
+	log.Printf("index:%d", index)
+
 	switch routing {
 	case "nebura":
-		NclientSendMsg(b)
+		log.Printf("Nebura Conect...\n")
+
+		//NclientConect(b)
+
 	case "zebra":
 
 		c, err := zebra.ZebraClientInit()
@@ -171,16 +186,78 @@ func BgpupdateParse(data []byte, routing string) error {
 		if err != nil {
 			log.Fatal(err)
 		}
+
 		log.Printf("Zebra Conect...\n")
 
 		c.SendHello()
-		c.SendRouteAdd()
+		c.SendRouteAdd(b.NLRI.NLRI.String(), b.Nexthop.String())
+
+	default:
+		fmt.Printf("Routing Software no Select\n")
 	}
 	return nil
 }
 
-const BgpKeepAliveType = 4
-const BgpUpdateType = 2
+func BgpHdrRead(conn net.Conn) ([]byte, uint8, error) {
+	var header [bgpHederSize]byte
+	if _, err := io.ReadFull(conn, header[:]); err != nil {
+		return nil, 0, nil
+	}
+
+	for i := 0; i < 16; i++ {
+		if header[i] != 0xFF {
+			return nil, 0, nil
+		}
+	}
+
+	size := binary.BigEndian.Uint16(header[16:18])
+	if size < bgpHederSize || size > 4096 {
+		return nil, 0, nil
+	}
+
+	buf := make([]byte, size-bgpHederSize)
+	if _, err := io.ReadFull(conn, buf); err != nil {
+		return nil, 0, nil
+	}
+
+	TypeCode := uint8(header[18])
+
+	return buf, TypeCode, nil
+}
+
+func NexthopPrefixIndex(prefix string) (int, error) {
+
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		log.Fatal(err)
+		return 0, nil
+	}
+
+	var b bool = false
+	var index int
+
+	for _, i := range ifaces {
+		addrs, err := i.Addrs()
+		if err != nil {
+			log.Fatal(err)
+			continue
+		}
+
+		for _, a := range addrs {
+			if !b {
+				_, ipnet, _ := net.ParseCIDR(a.String())
+				ip := net.ParseIP(prefix)
+				b = ipnet.Contains(ip)
+				index = i.Index
+				break
+			}
+
+		}
+
+	}
+
+	return index, nil
+}
 
 func (p *Peer) PeerListen() error {
 
@@ -197,33 +274,19 @@ func (p *Peer) PeerListen() error {
 	p.BgpSendOpenMsg()
 
 	for {
-		var header [bgpHederSize]byte
-		if _, err := io.ReadFull(p.Conn, header[:]); err != nil {
-			return nil
+
+		buf, TypeCode, err := BgpHdrRead(p.Conn)
+
+		if err != nil {
+			log.Fatal(err)
 		}
 
-		for i := 0; i < 16; i++ {
-			if header[i] != 0xFF {
-				return nil
-			}
-		}
-
-		size := binary.BigEndian.Uint16(header[16:18])
-		if size < bgpHederSize || size > 4096 {
-			return nil
-		}
-
-		buf := make([]byte, size-bgpHederSize)
-		if _, err := io.ReadFull(p.Conn, buf); err != nil {
-			return nil
-		}
-
-		BgpType := uint8(header[18])
-
-		switch BgpType {
+		switch TypeCode {
 		case BgpKeepAliveType:
+			log.Printf("BGP KeepAlive Recv...\n")
 			p.BgpSendkeepAliveMsg()
 		case BgpUpdateType:
+			log.Printf("BGP Update Recv...\n")
 			BgpupdateParse(buf, p.Select)
 		}
 	}
