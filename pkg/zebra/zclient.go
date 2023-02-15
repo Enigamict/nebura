@@ -260,63 +260,6 @@ func nexthopProcessFlagForBGPRouteBody() nexthopProcessFlag {
 	return processFlag
 }
 
-const (
-	zapi4RouteNHRP RouteType = iota + routePIM + 1
-	zapi4RouteHSLS
-	zapi4RouteOLSR
-	zapi4RouteTABLE
-	zapi4RouteLDP
-	zapi4RouteVNC
-	zapi4RouteVNCDirect
-	zapi4RouteVNCDirectRH
-	zapi4RouteBGPDixrect
-	zapi4RouteBGPDirectEXT
-	zapi4RouteAll
-)
-
-var routeTypeZapi4Map = map[RouteType]RouteType{
-	routeNHRP:         zapi4RouteNHRP,
-	routeHSLS:         zapi4RouteHSLS,
-	routeOLSR:         zapi4RouteOLSR,
-	routeTABLE:        zapi4RouteTABLE,
-	routeLDP:          zapi4RouteLDP,
-	routeVNC:          zapi4RouteVNC,
-	routeVNCDirect:    zapi4RouteVNCDirect,
-	routeVNCDirectRH:  zapi4RouteVNCDirectRH,
-	routeBGPDirect:    zapi4RouteBGPDixrect,
-	routeBGPDirectEXT: zapi4RouteBGPDirectEXT,
-	routeAll:          zapi4RouteAll,
-}
-
-const (
-	zapi3RouteHSLS RouteType = iota + routePIM + 1
-	zapi3RouteOLSR
-	zapi3RouteBABEL
-	zapi3RouteNHRP // quagga 1.2.4
-)
-
-var routeTypeZapi3Map = map[RouteType]RouteType{
-	routeHSLS:  zapi3RouteHSLS,
-	routeOLSR:  zapi3RouteOLSR,
-	routeBABEL: zapi3RouteBABEL,
-	routeNHRP:  zapi3RouteNHRP,
-}
-
-func (t RouteType) toEach(version uint8) RouteType {
-	if t <= routePIM || version > 4 { // not need to convert
-		return t
-	}
-	routeTypeMap := routeTypeZapi4Map
-	if version < 4 {
-		routeTypeMap = routeTypeZapi3Map
-	}
-	backward, ok := routeTypeMap[t]
-	if ok {
-		return backward // success to convert
-	}
-	return routeMax // fail to convert and error value
-}
-
 func familyFromPrefix(prefix net.IP) uint8 {
 	if prefix.To4() != nil {
 		return syscall.AF_INET
@@ -326,28 +269,11 @@ func familyFromPrefix(prefix net.IP) uint8 {
 	return syscall.AF_UNSPEC
 }
 
-func (n Nexthop) gateToType(version uint8) nexthopType {
-	if n.Gate.To4() != nil {
-		if version > 4 && n.Ifindex > 0 {
-			return nexthopTypeIPv4IFIndex
-		}
-		return nexthopTypeIPv4.toEach(version)
-	} else if n.Gate.To16() != nil {
-		if version > 4 && n.Ifindex > 0 {
-			return nexthopTypeIPv6IFIndex
-		}
-		return nexthopTypeIPv6.toEach(version)
-	} else if n.Ifindex > 0 {
-		return nexthopTypeIFIndex.toEach(version)
-	} else if version > 4 {
-		return nexthopTypeBlackhole
-	}
-	return nexthopType(0)
+func (n Nexthop) gateToType() nexthopType {
+	return nexthopTypeIPv4
 }
 
 func (t nexthopType) ipToIPIFIndex() nexthopType {
-	// process of nexthopTypeIPv[4|6] is same as nexthopTypeIPv[4|6]IFIndex
-	// in BGPRouteBody of frr7.3 and NexthoUpdate of frr
 	if t == nexthopTypeIPv4 {
 		return nexthopTypeIPv4IFIndex
 	} else if t == nexthopTypeIPv6 {
@@ -356,55 +282,21 @@ func (t nexthopType) ipToIPIFIndex() nexthopType {
 	return t
 }
 
-// For Quagga.
-const (
-	nexthopTypeIFName              nexthopType = iota + 2 // 2
-	backwardNexthopTypeIPv4                               // 3
-	backwardNexthopTypeIPv4IFIndex                        // 4
-	nexthopTypeIPv4IFName                                 // 5
-	backwardNexthopTypeIPv6                               // 6
-	backwardNexthopTypeIPv6IFIndex                        // 7
-	nexthopTypeIPv6IFName                                 // 8
-	backwardNexthopTypeBlackhole                          // 9
-)
-
-var nexthopTypeMap = map[nexthopType]nexthopType{
-	nexthopTypeIPv4:        backwardNexthopTypeIPv4,        // 2 -> 3
-	nexthopTypeIPv4IFIndex: backwardNexthopTypeIPv4IFIndex, // 3 -> 4
-	nexthopTypeIPv6:        backwardNexthopTypeIPv6,        // 4 -> 6
-	nexthopTypeIPv6IFIndex: backwardNexthopTypeIPv6IFIndex, // 5 -> 7
-	nexthopTypeBlackhole:   backwardNexthopTypeBlackhole,   // 6 -> 9
-}
-
-func (t nexthopType) toEach(version uint8) nexthopType {
-	if version > 3 { // frr
-		return t
-	}
-	if t == nexthopTypeIFIndex || t > nexthopTypeBlackhole { // 1 (common), 7, 8, 9 (out of map range)
-		return t
-	}
-	backward, ok := nexthopTypeMap[t]
-	if ok {
-		return backward // converted value
-	}
-	return nexthopType(0) // error for conversion
-}
 func (n Nexthop) encode(processFlag nexthopProcessFlag, message MessageFlag, apiFlag Flag) []byte {
 	var buf []byte
 	if processFlag&nexthopHasVrfID > 0 {
 		tmpbuf := make([]byte, 4)
 		binary.BigEndian.PutUint32(tmpbuf, n.VrfID)
-		buf = append(buf, tmpbuf...) //frr: stream_putl(s, api_nh->vrf_id);
+		buf = append(buf, tmpbuf...)
 	}
 	if processFlag&nexthopHasType > 0 {
 		if n.Type == nexthopType(0) {
-			n.Type = n.gateToType(6)
+			n.Type = n.gateToType()
 		}
-		buf = append(buf, uint8(n.Type)) //frr: stream_putc(s, api_nh->type);
+		buf = append(buf, uint8(n.Type))
 	}
 	if processFlag&nexthopHasFlag > 0 || processFlag&nexthopHasOnlink > 0 {
-		// frr7.1, 7.2 has onlink, 7.3 has flag
-		buf = append(buf, n.flags) //frr: stream_putc(s, nh_flags);
+		buf = append(buf, n.flags)
 	}
 
 	nhType := n.Type
@@ -412,36 +304,14 @@ func (n Nexthop) encode(processFlag nexthopProcessFlag, message MessageFlag, api
 		nhType = nhType.ipToIPIFIndex()
 	}
 
-	if nhType == nexthopTypeIPv4.toEach(6) ||
-		nhType == nexthopTypeIPv4IFIndex.toEach(6) {
+	if nhType == nexthopTypeIPv4 ||
+		nhType == nexthopTypeIPv4IFIndex {
 		buf = append(buf, n.Gate.To4()...)
 	}
 
 	return buf
 }
 
-func (f MessageFlag) ToEach(version uint8, software Software) MessageFlag {
-	if version > 4 { //zapi version 5, 6
-		if f > messageNhg && (version == 5 ||
-			(version == 6 && software.name == "frr" && software.version < 8)) { // except frr8
-			return f >> 1
-		}
-		return f
-	}
-	if version < 4 { //zapi version 3, 2
-		switch f {
-		case MessageMTU:
-			return 16
-		case messageTag:
-			return 32
-		}
-	}
-	switch f { //zapi version 4
-	case MessageDistance, MessageMetric, messageTag, MessageMTU, messageSRCPFX:
-		return f << 1
-	}
-	return f
-}
 func (b *BGPRouteBody) writeTo() ([]byte, error) {
 	var buf []byte
 	numNexthop := len(b.Nexthops)

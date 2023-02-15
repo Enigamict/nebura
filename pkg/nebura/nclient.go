@@ -15,7 +15,6 @@ type Prefix struct {
 type RouteAdd struct {
 	Prefix    Prefix
 	srcPrefix Prefix
-	index     uint8
 }
 
 func SendNclientMsg(c net.Conn, b *Update) error {
@@ -23,7 +22,7 @@ func SendNclientMsg(c net.Conn, b *Update) error {
 	var buf []byte
 	buf = make([]byte, 3)
 
-	binary.BigEndian.PutUint16(buf[0:2], 15)
+	binary.BigEndian.PutUint16(buf[0:2], 14)
 	buf[2] = uint8(2)
 
 	ApiHdr := &RouteAdd{
@@ -35,7 +34,6 @@ func SendNclientMsg(c net.Conn, b *Update) error {
 			Prefix:    b.Nexthop,
 			PrefixLen: uint8(24),
 		},
-		index: uint8(40),
 	}
 
 	dstBlen := (int(ApiHdr.Prefix.PrefixLen) + 7) / 8
@@ -44,13 +42,13 @@ func SendNclientMsg(c net.Conn, b *Update) error {
 
 	buf = append(buf, ApiHdr.srcPrefix.PrefixLen)
 	buf = append(buf, ApiHdr.srcPrefix.Prefix[:dstBlen]...)
-	buf = append(buf, ApiHdr.index)
 
 	_, err := c.Write(buf)
 
 	if err != nil {
 		log.Println(err)
 	}
+
 	return nil
 }
 

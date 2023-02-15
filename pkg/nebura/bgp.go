@@ -170,14 +170,11 @@ func BgpupdateParse(data []byte, routing string) error {
 		},
 	}
 
-	index, _ := NexthopPrefixIndex(string(b.Nexthop))
-	log.Printf("index:%d", index)
-
 	switch routing {
 	case "nebura":
 		log.Printf("Nebura Conect...\n")
 
-		//NclientConect(b)
+		NclientConect(b)
 
 	case "zebra":
 
@@ -223,40 +220,6 @@ func BgpHdrRead(conn net.Conn) ([]byte, uint8, error) {
 	TypeCode := uint8(header[18])
 
 	return buf, TypeCode, nil
-}
-
-func NexthopPrefixIndex(prefix string) (int, error) {
-
-	ifaces, err := net.Interfaces()
-	if err != nil {
-		log.Fatal(err)
-		return 0, nil
-	}
-
-	var b bool = false
-	var index int
-
-	for _, i := range ifaces {
-		addrs, err := i.Addrs()
-		if err != nil {
-			log.Fatal(err)
-			continue
-		}
-
-		for _, a := range addrs {
-			if !b {
-				_, ipnet, _ := net.ParseCIDR(a.String())
-				ip := net.ParseIP(prefix)
-				b = ipnet.Contains(ip)
-				index = i.Index
-				break
-			}
-
-		}
-
-	}
-
-	return index, nil
 }
 
 func (p *Peer) PeerListen() error {
