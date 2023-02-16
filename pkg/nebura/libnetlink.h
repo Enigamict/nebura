@@ -146,3 +146,5 @@ void monitor_show(struct nlmsghdr *hdr);
 int rtnl_open();
 
 int rtnl_listen(int fd);
+struct rtattr *addattr_nest(struct nlmsghdr *n, int maxlen, int type);
+int addattr_nest_end(struct nlmsghdr *n, struct rtattr *nest);

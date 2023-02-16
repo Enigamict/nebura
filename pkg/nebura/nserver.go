@@ -1,9 +1,9 @@
 package nebura
 
 /*
-#cgo LDFLAGS: -L. -lipv4add
+#cgo LDFLAGS: -L. -lnetlink_code
 #include "libnetlink.h"
-#include "ipv4add.h"
+#include "netlink_code.h"
 */
 import "C"
 
@@ -36,8 +36,11 @@ type ApiHeader struct {
 }
 
 type RIBPrefix struct {
-	PrefixLen uint8
-	Prefix    net.IP
+	PrefixLen       uint8
+	Prefix          net.IP
+	Nexthop         net.IP
+	index           net.IP
+	RoutingProtocol string
 }
 
 type Rib struct {
@@ -78,9 +81,14 @@ func NexthopPrefixIndex(prefix string) (int, error) {
 
 	return index, nil
 }
-func NetlinkSendStaticRouteAdd(dstPrefix string, srcPrefix string, index uint8) error {
 
-	C.ipv4_route_add(C.CString(dstPrefix), C.CString(srcPrefix), C.int(index))
+func NetlinkSendStaticRouteAdd(data []byte) error {
+	dstPrefix := prefixPadding(data[4:8])
+	srcPrefix := prefixPadding(data[9:13])
+
+	index, _ := NexthopPrefixIndex(srcPrefix.String())
+
+	C.ipv4_route_add(C.CString(dstPrefix.String()), C.CString(srcPrefix.String()), C.int(index))
 
 	return nil
 }
@@ -153,7 +161,7 @@ func neburaEvent(h *ApiHeader, data []byte) {
 
 	switch h.Type {
 	case staticRouteAdd:
-		NetlinkSendRouteAdd(data)
+		NetlinkSendStaticRouteAdd(data)
 	case bgpRouteAdd:
 		NetlinkSendRouteAdd(data)
 	default:
@@ -165,11 +173,13 @@ func NeburaByteRead(conn net.Conn) {
 	defer conn.Close()
 
 	hdr, err := NeburaRead(conn)
+
 	if err != nil {
 		log.Println(err)
 	}
 
 	hd := &ApiHeader{}
+
 	hd.DecodeApiHdr(hdr)
 
 	neburaEvent(hd, hdr)
@@ -192,6 +202,7 @@ func NserverStart() error {
 		log.Fatal(err)
 		return err
 	}
+	log.Printf("Nebura Server start...\n")
 
 	go signalNotify()
 

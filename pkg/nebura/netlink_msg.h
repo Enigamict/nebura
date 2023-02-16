@@ -32,3 +32,20 @@ struct iplink_req {
 	struct ifinfomsg	i;
 	char			buf[1024];
 };
+
+struct ipv6_sr_hdr {
+	__u8	nexthdr;
+	__u8	hdrlen;
+	__u8	type;
+	__u8	segments_left;
+	__u8	first_segment;
+	__u8	flags;
+	__u16	reserved;
+
+	struct in6_addr segments[0];
+};
+
+struct seg6_iptunnel_encap {
+	int mode;
+	struct ipv6_sr_hdr srh[];
+};

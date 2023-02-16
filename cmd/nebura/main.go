@@ -16,6 +16,7 @@ func Neburainit() {
 	}
 
 }
+
 func main() {
 	Neburainit()
 }

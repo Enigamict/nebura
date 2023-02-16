@@ -7,7 +7,6 @@ import (
 )
 
 type Prefix struct {
-	Family    uint8
 	PrefixLen uint8
 	Prefix    net.IP
 }

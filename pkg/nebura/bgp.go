@@ -23,6 +23,15 @@ const (
 	bgpMarkerSize = 16
 )
 
+type (
+	Event interface {
+		Loop(*Peer) error
+	}
+
+	TestEvent  struct{}
+	TestEvent2 struct{}
+)
+
 type BgpMsg interface {
 	writeTo() ([]byte, error)
 }
@@ -32,6 +41,8 @@ type Peer struct {
 	IdenTifer net.IP
 	NeiAdrees net.IP
 	Select    string
+	State     string
+	eventChan chan Event
 	Conn      net.Conn
 }
 
@@ -68,12 +79,52 @@ type Update struct {
 	NLRI    NLRIPrefix
 }
 
+func (t TestEvent) Loop(p *Peer) error {
+	p.SetState("test state")
+	log.Printf("tes1")
+	var err error
+	p.Conn, err = net.Dial("tcp", p.NeiAdrees.String()+":179")
+
+	log.Printf("BGP Peer Listen...\n")
+	log.Printf("Listen addr %s...\n", p.NeiAdrees.String())
+
+	if err != nil {
+		log.Fatal(err)
+	}
+	p.eventChan <- TestEvent2{}
+	return nil
+}
+
+func (t TestEvent2) Loop(p *Peer) error {
+	p.SetState("test2 state")
+	log.Printf("test2")
+	return nil
+}
+
+func (p *Peer) Run() error {
+
+	p.eventChan <- TestEvent{}
+	p.SetState("test state")
+
+	for {
+		select {
+		case e := <-p.eventChan:
+			log.Printf("event: %T (%+v)", e, e)
+			if err := e.Loop(p); err != nil {
+				return err
+			}
+		}
+	}
+}
+
 func PeerInit(as uint16, iden net.IP, peer net.IP, routing string) *Peer {
 
 	p := &Peer{
 		AS:        as,
 		IdenTifer: iden,
 		Select:    routing,
+		State:     "Idle",
+		eventChan: make(chan Event, 10),
 		NeiAdrees: peer,
 	}
 	return p
@@ -151,6 +202,8 @@ func (p *Peer) BgpSendOpenMsg() error {
 	}
 
 	p.SendMsg(bgpHederSize+10, uint8(BgpOpenType), Open)
+	p.SetState("OpenSent")
+	log.Printf("State OpenSent...\n")
 	return nil
 }
 
@@ -195,6 +248,8 @@ func BgpupdateParse(data []byte, routing string) error {
 	return nil
 }
 
+const BgpMsgMax = 4096
+
 func BgpHdrRead(conn net.Conn) ([]byte, uint8, error) {
 	var header [bgpHederSize]byte
 	if _, err := io.ReadFull(conn, header[:]); err != nil {
@@ -208,7 +263,7 @@ func BgpHdrRead(conn net.Conn) ([]byte, uint8, error) {
 	}
 
 	size := binary.BigEndian.Uint16(header[16:18])
-	if size < bgpHederSize || size > 4096 {
+	if size < bgpHederSize || size > BgpMsgMax {
 		return nil, 0, nil
 	}
 
@@ -220,6 +275,50 @@ func BgpHdrRead(conn net.Conn) ([]byte, uint8, error) {
 	TypeCode := uint8(header[18])
 
 	return buf, TypeCode, nil
+}
+
+func (p *Peer) SetState(s string) {
+	p.State = s
+}
+
+func (p *Peer) ParseBgpOpen(data []byte) error {
+
+	p.BgpSendOpenMsg()
+	return nil
+}
+
+func (p *Peer) ParseBgpKeepAlive(data []byte) error {
+
+	p.SetState("Estab")
+	log.Printf("State Estab...\n")
+
+	p.BgpSendkeepAliveMsg()
+	return nil
+}
+
+func (p *Peer) BgpRecvMsg() {
+
+	for {
+
+		buf, TypeCode, err := BgpHdrRead(p.Conn)
+
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		switch TypeCode {
+		case BgpOpenType:
+			log.Printf("BGP OpenMsg Recv...\n")
+			p.ParseBgpOpen(buf)
+		case BgpKeepAliveType:
+			log.Printf("BGP KeepAlive Recv...\n")
+			p.ParseBgpKeepAlive(buf)
+		case BgpUpdateType:
+			log.Printf("BGP Update Recv...\n")
+			BgpupdateParse(buf, p.Select)
+		}
+	}
+
 }
 
 func (p *Peer) PeerListen() error {
@@ -234,24 +333,7 @@ func (p *Peer) PeerListen() error {
 		log.Fatal(err)
 	}
 
-	p.BgpSendOpenMsg()
+	p.BgpRecvMsg()
 
-	for {
-
-		buf, TypeCode, err := BgpHdrRead(p.Conn)
-
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		switch TypeCode {
-		case BgpKeepAliveType:
-			log.Printf("BGP KeepAlive Recv...\n")
-			p.BgpSendkeepAliveMsg()
-		case BgpUpdateType:
-			log.Printf("BGP Update Recv...\n")
-			BgpupdateParse(buf, p.Select)
-		}
-	}
-
+	return nil
 }

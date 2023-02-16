@@ -14,4 +14,7 @@
 #include "netlink_msg.h"
 
 int ipv4_route_add(char *src_addr, char *dst_addr, int index);
-void hexdump1(FILE* fp, const void *buffer, size_t bufferlen);
+int ipv6_route_add(char *src_addr, int index);
+struct ipv6_sr_hdr *parse_srh();
+int seg6_end_aciton(struct in6_addr dst_addr);
+int seg6_route_add(struct in_addr dst_addr);

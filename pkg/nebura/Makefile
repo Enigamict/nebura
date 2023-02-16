@@ -1,12 +1,12 @@
 CC = gcc
-SRCS = ipv4add.c libnetlink.c
+SRCS = netlink_code.c libnetlink.c
 CFLAGS = -Wall -Wextra
 OBJS = $(SRCS:%.c=%.o)
 
 all :
-	$(CC) $(CFLAGS) -I ./ -c ipv4add.c libnetlink.c 
-	ar rcs libipv4add.a  $(OBJS)
-	cd ../../cmd/nebura/ && go build
+	$(CC) $(CFLAGS) -I ./ -c netlink_code.c libnetlink.c 
+	ar rcs libnetlink_code.a  $(OBJS)
+	cd ../../cmd/bgp/ && go build
 
 
 .PHONY: clean
