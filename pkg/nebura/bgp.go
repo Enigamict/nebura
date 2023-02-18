@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"sync"
 
 	"github.com/Enigamict/zebraland/pkg/zebra"
 )
@@ -28,8 +29,19 @@ type (
 		Loop(*Peer) error
 	}
 
-	TestEvent  struct{}
-	TestEvent2 struct{}
+	ConectActiveEvent struct{}
+
+	OpenSentEvent    struct{}
+	OpenConfirmEvent struct {
+		data []byte
+	}
+	EstabEvent struct {
+		data []byte
+	}
+
+	UpdateEvent struct {
+		data []byte
+	}
 )
 
 type BgpMsg interface {
@@ -43,6 +55,7 @@ type Peer struct {
 	Select    string
 	State     string
 	eventChan chan Event
+	wg        *sync.WaitGroup
 	Conn      net.Conn
 }
 
@@ -79,37 +92,65 @@ type Update struct {
 	NLRI    NLRIPrefix
 }
 
-func (t TestEvent) Loop(p *Peer) error {
-	p.SetState("test state")
-	log.Printf("tes1")
+func (t ConectActiveEvent) Loop(p *Peer) error {
+	p.SetState("Conect")
+	log.Printf("BGP State: %s", p.State)
+
 	var err error
 	p.Conn, err = net.Dial("tcp", p.NeiAdrees.String()+":179")
 
 	log.Printf("BGP Peer Listen...\n")
 	log.Printf("Listen addr %s...\n", p.NeiAdrees.String())
+	p.SetState("Active")
+	log.Printf("BGP State: %s", p.State)
 
 	if err != nil {
 		log.Fatal(err)
 	}
-	p.eventChan <- TestEvent2{}
+
+	p.eventChan <- OpenSentEvent{}
 	return nil
 }
 
-func (t TestEvent2) Loop(p *Peer) error {
-	p.SetState("test2 state")
-	log.Printf("test2")
+func (t OpenSentEvent) Loop(p *Peer) error {
+	p.SetState("OpenSent")
+	log.Printf("BGP State: %s", p.State)
+
+	p.BgpSendOpenMsg()
+
+	go p.BgpRecvMsg()
+
+	return nil
+}
+
+func (t UpdateEvent) Loop(p *Peer) error {
+
+	BgpupdateParse(t.data, p.Select)
+	return nil
+}
+
+func (t OpenConfirmEvent) Loop(p *Peer) error {
+	p.BgpSendkeepAliveMsg()
+	return nil
+}
+
+func (t EstabEvent) Loop(p *Peer) error {
+	p.SetState("Estab")
+	log.Printf("BGP State: %s", p.State)
+
+	p.BgpSendkeepAliveMsg()
+
 	return nil
 }
 
 func (p *Peer) Run() error {
 
-	p.eventChan <- TestEvent{}
-	p.SetState("test state")
+	log.Printf("BGP State: %s", p.State)
+	p.eventChan <- ConectActiveEvent{}
 
 	for {
 		select {
 		case e := <-p.eventChan:
-			log.Printf("event: %T (%+v)", e, e)
 			if err := e.Loop(p); err != nil {
 				return err
 			}
@@ -125,6 +166,7 @@ func PeerInit(as uint16, iden net.IP, peer net.IP, routing string) *Peer {
 		Select:    routing,
 		State:     "Idle",
 		eventChan: make(chan Event, 10),
+		wg:        new(sync.WaitGroup),
 		NeiAdrees: peer,
 	}
 	return p
@@ -202,8 +244,6 @@ func (p *Peer) BgpSendOpenMsg() error {
 	}
 
 	p.SendMsg(bgpHederSize+10, uint8(BgpOpenType), Open)
-	p.SetState("OpenSent")
-	log.Printf("State OpenSent...\n")
 	return nil
 }
 
@@ -274,7 +314,24 @@ func BgpHdrRead(conn net.Conn) ([]byte, uint8, error) {
 
 	TypeCode := uint8(header[18])
 
-	return buf, TypeCode, nil
+	for {
+		switch TypeCode {
+		case BgpOpenType:
+			log.Printf("BGP Open Recv...\n")
+			return buf, TypeCode, nil
+		case BgpKeepAliveType:
+			log.Printf("BGP KeepAlive Recv...\n")
+			return buf, TypeCode, nil
+		case BgpUpdateType:
+			log.Printf("BGP Update Recv...\n")
+			return buf, TypeCode, nil
+		default:
+			log.Printf("BGP Unknown...\n")
+			return buf, TypeCode, nil
+
+		}
+	}
+
 }
 
 func (p *Peer) SetState(s string) {
@@ -308,14 +365,14 @@ func (p *Peer) BgpRecvMsg() {
 
 		switch TypeCode {
 		case BgpOpenType:
-			log.Printf("BGP OpenMsg Recv...\n")
-			p.ParseBgpOpen(buf)
+			p.eventChan <- OpenConfirmEvent{buf}
 		case BgpKeepAliveType:
-			log.Printf("BGP KeepAlive Recv...\n")
-			p.ParseBgpKeepAlive(buf)
+			p.eventChan <- EstabEvent{buf}
 		case BgpUpdateType:
-			log.Printf("BGP Update Recv...\n")
-			BgpupdateParse(buf, p.Select)
+			p.eventChan <- UpdateEvent{buf}
+		default:
+			log.Printf("BGP Unknown...\n")
+
 		}
 	}
 
