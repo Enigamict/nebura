@@ -6,64 +6,123 @@ import (
 	"net"
 )
 
+type Body interface {
+	writeTo() ([]byte, error)
+}
+
+type ApiHeader struct {
+	Len  uint16
+	Type uint8
+	Body Body
+}
+
 type Prefix struct {
 	PrefixLen uint8
 	Prefix    net.IP
 }
 
-type RouteAdd struct {
-	Prefix    Prefix
-	srcPrefix Prefix
+type NclientRouteAdd struct {
+	Nexthop Prefix
+	NLRI    Prefix
 }
 
-func SendNclientMsg(c net.Conn, b *Update) error {
+type NclientIPv6RouteAdd struct {
+	Nexthop Prefix
+	NLRI    Prefix
+}
+
+type Nclient struct {
+	Type string
+	Conn net.Conn
+}
+
+func (n *NclientRouteAdd) writeTo() ([]byte, error) {
 
 	var buf []byte
+
+	dstBlen := (int(n.NLRI.PrefixLen) + 7) / 8
+	buf = append(buf, n.NLRI.PrefixLen)
+	buf = append(buf, n.NLRI.Prefix[:dstBlen]...)
+
+	buf = append(buf, n.Nexthop.PrefixLen)
+	buf = append(buf, n.Nexthop.Prefix[:dstBlen]...)
+
+	return buf, nil
+}
+
+func (api *ApiHeader) writeTo() ([]byte, error) {
+	var buf []byte
 	buf = make([]byte, 3)
+	binary.BigEndian.PutUint16(buf[0:2], NeburaHdrSize)
+	buf[2] = uint8(api.Type)
 
-	binary.BigEndian.PutUint16(buf[0:2], 14)
-	buf[2] = uint8(2)
-
-	ApiHdr := &RouteAdd{
-		Prefix: Prefix{
-			Prefix:    b.NLRI.NLRI,
-			PrefixLen: uint8(b.NLRI.Len),
-		},
-		srcPrefix: Prefix{
-			Prefix:    b.Nexthop,
-			PrefixLen: uint8(24),
-		},
-	}
-
-	dstBlen := (int(ApiHdr.Prefix.PrefixLen) + 7) / 8
-	buf = append(buf, ApiHdr.Prefix.PrefixLen)
-	buf = append(buf, ApiHdr.Prefix.Prefix[:dstBlen]...)
-
-	buf = append(buf, ApiHdr.srcPrefix.PrefixLen)
-	buf = append(buf, ApiHdr.srcPrefix.Prefix[:dstBlen]...)
-
-	_, err := c.Write(buf)
-
+	hdr, err := api.Body.writeTo()
 	if err != nil {
-		log.Println(err)
+		return nil, err
+	}
+	return append(buf, hdr...), nil
+}
+
+func (n *Nclient) sendNclientAPI(rtype uint8, body Body) error {
+	api := &ApiHeader{
+		Len:  NeburaHdrSize,
+		Type: rtype,
+		Body: body,
 	}
 
+	buf, _ := api.writeTo()
+
+	log.Printf("Send buf %v...\n", buf)
+	n.Conn.Write(buf)
 	return nil
 }
 
-func NclientConect(b *Update) error {
+func (n *Nclient) SendNclientIPv4RouteAdd(prefix net.IP, nexthop net.IP, len uint8) error {
 
+	body := &NclientRouteAdd{
+		Nexthop: Prefix{
+			Prefix: nexthop,
+		},
+		NLRI: Prefix{
+			Prefix:    prefix,
+			PrefixLen: len,
+		},
+	}
+
+	n.sendNclientAPI(2, body)
+	return nil
+
+}
+
+func (n *Nclient) SendNclientIPv6RouteAdd(prefix net.IP, nexthop net.IP, len uint8) error {
+
+	body := &NclientRouteAdd{
+		Nexthop: Prefix{
+			Prefix: nexthop,
+		},
+		NLRI: Prefix{
+			Prefix:    prefix,
+			PrefixLen: len,
+		},
+	}
+
+	n.sendNclientAPI(2, body)
+	return nil
+
+}
+
+func NclientInit() (*Nclient, error) {
 	conn, err := net.Dial("unix", "/tmp/test.sock")
 
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	err = SendNclientMsg(conn, b)
-
-	if err != nil {
-		log.Fatal(err)
+	n := &Nclient{
+		Type: "BGP",
+		Conn: conn,
 	}
 
-	return nil
+	return n, nil
+
 }

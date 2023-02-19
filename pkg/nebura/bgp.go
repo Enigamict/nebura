@@ -6,7 +6,6 @@ import (
 	"io"
 	"log"
 	"net"
-	"sync"
 
 	"github.com/Enigamict/zebraland/pkg/zebra"
 )
@@ -55,7 +54,6 @@ type Peer struct {
 	Select    string
 	State     string
 	eventChan chan Event
-	wg        *sync.WaitGroup
 	Conn      net.Conn
 }
 
@@ -166,7 +164,6 @@ func PeerInit(as uint16, iden net.IP, peer net.IP, routing string) *Peer {
 		Select:    routing,
 		State:     "Idle",
 		eventChan: make(chan Event, 10),
-		wg:        new(sync.WaitGroup),
 		NeiAdrees: peer,
 	}
 	return p
@@ -174,8 +171,7 @@ func PeerInit(as uint16, iden net.IP, peer net.IP, routing string) *Peer {
 
 func (h *Hdr) writeTo() ([]byte, error) {
 
-	var buf []byte
-	buf = make([]byte, 19)
+	buf := make([]byte, 19)
 	for i := 0; i < bgpMarkerSize; i++ {
 		buf[i] = 0xFF
 	}
@@ -267,7 +263,12 @@ func BgpupdateParse(data []byte, routing string) error {
 	case "nebura":
 		log.Printf("Nebura Conect...\n")
 
-		NclientConect(b)
+		n, err := NclientInit()
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		n.SendNclientIPv4RouteAdd(b.NLRI.NLRI, b.Nexthop, b.NLRI.Len)
 
 	case "zebra":
 
@@ -376,21 +377,4 @@ func (p *Peer) BgpRecvMsg() {
 		}
 	}
 
-}
-
-func (p *Peer) PeerListen() error {
-
-	var err error
-	p.Conn, err = net.Dial("tcp", p.NeiAdrees.String()+":179")
-
-	log.Printf("BGP Peer Listen...\n")
-	log.Printf("Listen addr %s...\n", p.NeiAdrees.String())
-
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	p.BgpRecvMsg()
-
-	return nil
 }

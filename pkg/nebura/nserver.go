@@ -20,32 +20,40 @@ import (
 
 type ApiType uint8
 
-var r Rib = RibInit()
-
 const NeburaHdrSize = 13
 
-const (
-	testHello      uint8 = 0
-	staticRouteAdd uint8 = 1
-	bgpRouteAdd    uint8 = 2
+var r Rib = RibInit()
+
+type (
+	NeburaEvent interface {
+		Loop(*Peer) error
+	}
 )
 
-type ApiHeader struct {
-	Len  uint16
-	Type uint8
-}
+const (
+	testHello       uint8 = 0
+	staticRouteAdd  uint8 = 1
+	bgpRouteAdd     uint8 = 2
+	bgpIPv6RouteAdd uint8 = 3
+)
 
 type RIBPrefix struct {
 	PrefixLen       uint8
 	Prefix          net.IP
 	Nexthop         net.IP
-	index           net.IP
+	Index           uint8
 	RoutingProtocol string
+	Prefix2         *net.IPNet
 }
 
 type Rib struct {
 	mu     *sync.Mutex
 	Preifx map[int]RIBPrefix
+}
+
+type Nserver struct {
+	Conn net.Conn
+	Rib  Rib
 }
 
 func NexthopPrefixIndex(prefix string) (int, error) {
@@ -100,7 +108,19 @@ func prefixPadding(data []byte) net.IP {
 var RibCount = 0
 
 func (r *Rib) RibShow() {
-	fmt.Printf("value: %v\n", r.Preifx)
+	fmt.Printf("RIB SHOW: %v\n", r.Preifx)
+}
+
+func (r *Rib) RibFind(prefix net.IP) bool {
+
+	defer r.mu.Unlock()
+	r.mu.Lock()
+	var p bool
+	for _, v := range r.Preifx {
+		p = v.Prefix2.IP.Equal(prefix)
+	}
+
+	return p
 }
 
 func (r *Rib) RibAdd(addRoute RIBPrefix) error {
@@ -110,7 +130,7 @@ func (r *Rib) RibAdd(addRoute RIBPrefix) error {
 
 	r.Preifx[RibCount] = addRoute
 	RibCount++
-
+	r.RibShow()
 	return nil
 }
 
@@ -129,12 +149,24 @@ func NetlinkSendRouteAdd(data []byte) error {
 	index, _ := NexthopPrefixIndex(srcPrefix.String())
 
 	a := RIBPrefix{
-		Prefix:    dstPrefix,
-		PrefixLen: uint8(data[8]),
+		Prefix:          dstPrefix,
+		PrefixLen:       uint8(data[8]),
+		Nexthop:         srcPrefix,
+		Index:           uint8(index),
+		RoutingProtocol: "BGP",
 	}
 
 	r.RibAdd(a)
-	r.RibShow()
+	C.ipv4_route_add(C.CString(dstPrefix.String()), C.CString(srcPrefix.String()), C.int(index))
+	return nil
+}
+
+func NetlinkSendIPv6RouteAdd(data []byte) error {
+
+	dstPrefix := prefixPadding(data[4:8])
+	srcPrefix := prefixPadding(data[9:13])
+
+	index, _ := NexthopPrefixIndex(srcPrefix.String())
 
 	C.ipv4_route_add(C.CString(dstPrefix.String()), C.CString(srcPrefix.String()), C.int(index))
 	return nil
@@ -164,6 +196,8 @@ func neburaEvent(h *ApiHeader, data []byte) {
 		NetlinkSendStaticRouteAdd(data)
 	case bgpRouteAdd:
 		NetlinkSendRouteAdd(data)
+	case bgpIPv6RouteAdd:
+		NetlinkSendIPv6RouteAdd(data)
 	default:
 		log.Printf("not type")
 	}
@@ -208,10 +242,12 @@ func NserverStart() error {
 
 	for {
 		conn, err := listener.Accept()
+		log.Printf("Nebura Server Sock number %d...\n", conn)
 		if err != nil {
 			log.Fatal(err)
 			return err
 		}
+
 		go NeburaByteRead(conn)
 	}
 

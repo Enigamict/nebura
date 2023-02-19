@@ -1,0 +1,7 @@
+bgpconfig:
+    -
+        select: nebura
+        id: "10.255.3.4"
+        as: 65002
+        peer:
+            neiaddr: "10.255.3.1"

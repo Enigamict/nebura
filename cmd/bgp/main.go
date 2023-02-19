@@ -10,7 +10,7 @@ import (
 
 func main() {
 
-	c, err := config.BgpConfing("../../conf/bgp.yaml")
+	c, err := config.BgpConfing("../../conf/bgp2.yaml")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -23,10 +23,12 @@ func main() {
 		}
 		//p.PeerListen()
 	case "zebra":
-		p := nebura.PeerInit(c.As, net.ParseIP(c.Id).To4(), net.ParseIP(c.PeerPrefix.NeiAddr), c.Select)
-		p.PeerListen()
+		for {
+			p := nebura.PeerInit(c.As, net.ParseIP(c.Id).To4(), net.ParseIP(c.PeerPrefix.NeiAddr), c.Select)
+			p.Run()
+		}
 	default:
-		log.Printf("Plase select Routing Software to Zebra or Neburan\n")
+		log.Printf("Plase select Routing Software to Zebra or Nebura\n")
 	}
 
 }
