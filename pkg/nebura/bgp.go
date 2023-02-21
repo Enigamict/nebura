@@ -261,15 +261,9 @@ func BgpupdateParse(data []byte, routing string) error {
 
 	switch routing {
 	case "nebura":
+		var n = NclientInit()
 		log.Printf("Nebura Conect...\n")
-
-		n, err := NclientInit()
-		if err != nil {
-			log.Fatal(err)
-		}
-
 		n.SendNclientIPv4RouteAdd(b.NLRI.NLRI, b.Nexthop, b.NLRI.Len)
-
 	case "zebra":
 
 		c, err := zebra.ZebraClientInit()
@@ -336,6 +330,8 @@ func BgpHdrRead(conn net.Conn) ([]byte, uint8, error) {
 }
 
 func (p *Peer) SetState(s string) {
+	defer r.mu.Unlock()
+	r.mu.Lock()
 	p.State = s
 }
 
@@ -372,8 +368,7 @@ func (p *Peer) BgpRecvMsg() {
 		case BgpUpdateType:
 			p.eventChan <- UpdateEvent{buf}
 		default:
-			log.Printf("BGP Unknown...\n")
-
+			break
 		}
 	}
 

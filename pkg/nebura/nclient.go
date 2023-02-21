@@ -26,6 +26,11 @@ type NclientRouteAdd struct {
 	NLRI    Prefix
 }
 
+type NclientBgpRibFind struct {
+	NLRI      Prefix
+	RouteType uint8
+}
+
 type NclientIPv6RouteAdd struct {
 	Nexthop Prefix
 	NLRI    Prefix
@@ -50,16 +55,25 @@ func (n *NclientRouteAdd) writeTo() ([]byte, error) {
 	return buf, nil
 }
 
+func (n *NclientBgpRibFind) writeTo() ([]byte, error) {
+
+	var buf []byte
+	buf[0] = n.RouteType
+	return buf, nil
+}
+
 func (api *ApiHeader) writeTo() ([]byte, error) {
 	var buf []byte
 	buf = make([]byte, 3)
-	binary.BigEndian.PutUint16(buf[0:2], NeburaHdrSize)
+	binary.BigEndian.PutUint16(buf[0:2], NeburaHdrSize) // 可変になる
 	buf[2] = uint8(api.Type)
 
 	hdr, err := api.Body.writeTo()
+
 	if err != nil {
 		return nil, err
 	}
+
 	return append(buf, hdr...), nil
 }
 
@@ -81,7 +95,8 @@ func (n *Nclient) SendNclientIPv4RouteAdd(prefix net.IP, nexthop net.IP, len uin
 
 	body := &NclientRouteAdd{
 		Nexthop: Prefix{
-			Prefix: nexthop,
+			Prefix:    nexthop,
+			PrefixLen: 24,
 		},
 		NLRI: Prefix{
 			Prefix:    prefix,
@@ -106,12 +121,12 @@ func (n *Nclient) SendNclientIPv6RouteAdd(prefix net.IP, nexthop net.IP, len uin
 		},
 	}
 
-	n.sendNclientAPI(2, body)
+	n.sendNclientAPI(3, body)
 	return nil
 
 }
 
-func NclientInit() (*Nclient, error) {
+func NclientInit() *Nclient {
 	conn, err := net.Dial("unix", "/tmp/test.sock")
 
 	if err != nil {
@@ -123,6 +138,5 @@ func NclientInit() (*Nclient, error) {
 		Conn: conn,
 	}
 
-	return n, nil
-
+	return n
 }

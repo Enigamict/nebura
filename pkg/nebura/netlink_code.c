@@ -89,7 +89,7 @@ struct netlink_msg req;
   req.r.rtm_src_len = 0;
   req.r.rtm_tos = 0;
   req.r.rtm_table = RT_TABLE_MAIN; // 0xFE
-  req.r.rtm_protocol = RTPROT_STATIC; //0x04
+  req.r.rtm_protocol = RTPROT_BGP; //0x04
   req.r.rtm_scope = RT_SCOPE_UNIVERSE; // 0x00
   req.r.rtm_type = RTN_UNICAST; // 0x01
   req.r.rtm_flags = 0;

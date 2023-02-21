@@ -1,8 +1,10 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net"
+	"os"
 
 	"github.com/Enigamict/zebraland/pkg/config"
 	"github.com/Enigamict/zebraland/pkg/nebura"
@@ -10,7 +12,14 @@ import (
 
 func main() {
 
-	c, err := config.BgpConfing("../../conf/bgp2.yaml")
+	// 消す
+	var bgpconfig string
+	for i, v := range os.Args {
+		fmt.Printf("args[%d] -> %s\n", i, v)
+		bgpconfig = v
+	}
+
+	c, err := config.BgpConfing(bgpconfig)
 	if err != nil {
 		log.Fatal(err)
 	}
