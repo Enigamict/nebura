@@ -6,6 +6,9 @@ import (
 	"io"
 	"log"
 	"net"
+
+	"github.com/Enigamict/zebraland/pkg/config"
+	"github.com/Enigamict/zebraland/pkg/nebura"
 )
 
 type Prefix struct {
@@ -68,16 +71,25 @@ func NeburaRead(c net.Conn) ([]byte, error) {
 }
 func main() {
 
-	conn, err := net.Dial(protocol, sockAddr)
-	if err != nil {
-		log.Fatal(err)
-	}
+	a, _ := config.ReadConfing("../../conf/static.yaml")
+	fmt.Printf("%v", a[0].Prefix.SrcPrefix)
+	for {
+		p := nebura.PeerInit(65000, net.ParseIP("1.1.1.1").To4(), net.ParseIP("10.255.1.1"), "nebura")
+		go p.Run()
 
-	err = Write(conn)
-	if err != nil {
-		log.Fatal(err)
+		p1 := nebura.PeerInit(65001, net.ParseIP("1.1.1.2").To4(), net.ParseIP("10.255.2.2"), "nebura")
+		p1.Run()
 	}
+	//conn, err := net.Dial(protocol, sockAddr)
+	//if err != nil {
+	//	log.Fatal(err)
+	//}
 
-	NeburaRead(conn)
+	//err = Write(conn)
+	//if err != nil {
+	//	log.Fatal(err)
+	//}
+
+	//NeburaRead(conn)
 
 }

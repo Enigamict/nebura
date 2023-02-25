@@ -32,11 +32,11 @@ type Conf struct {
 }
 
 type ConfPrefix struct {
-	SrcPrefix string `yaml:"srcprefix"`
-	DstPrefix string `yaml:"dstprefix"`
+	SrcPrefix []string `yaml:"srcprefix"`
+	DstPrefix string   `yaml:"dstprefix"`
 }
 
-func ReadConfing(pass string) (Conf, error) {
+func ReadConfing(pass string) ([]Conf, error) {
 
 	buf, err := ioutil.ReadFile(pass)
 	if err != nil {
@@ -49,7 +49,7 @@ func ReadConfing(pass string) (Conf, error) {
 		panic(err)
 	}
 
-	return d.Conf[0], nil
+	return d.Conf[:], nil
 }
 
 func BgpConfing(pass string) (PeerConf, error) {

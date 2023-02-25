@@ -113,10 +113,10 @@ func (n *Nclient) SendNclientIPv6RouteAdd(prefix net.IP, nexthop net.IP, len uin
 
 	body := &NclientRouteAdd{
 		Nexthop: Prefix{
-			Prefix: nexthop,
+			Prefix: nexthop.To16(),
 		},
 		NLRI: Prefix{
-			Prefix:    prefix,
+			Prefix:    prefix.To16(),
 			PrefixLen: len,
 		},
 	}

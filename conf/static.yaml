@@ -4,5 +4,6 @@ config:
         static: false
         DeviceIndex: 2
         prefix:
-            srcprefix: "192.168.64.1"
-            dstprefix: "1.2.3.4"
+            srcprefix: 
+            - "10.255.2.2"
+            - "10.255.2.1"

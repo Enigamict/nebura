@@ -232,3 +232,58 @@ int seg6_route_add(struct in_addr dst_addr) {
   //parse(answer, sizeof(buf));
 
 }
+
+int get_time(unsigned int *time, const char *str)
+{
+	double t;
+	char *p;
+
+	t = strtod(str, &p);
+	if (p == str)
+		return -1;
+
+	if (*p) {
+		if (strcasecmp(p, "s") == 0 || strcasecmp(p, "sec") == 0 ||
+		    strcasecmp(p, "secs") == 0)
+			t *= TIME_UNITS_PER_SEC;
+		else if (strcasecmp(p, "ms") == 0 || strcasecmp(p, "msec") == 0 ||
+			 strcasecmp(p, "msecs") == 0)
+			t *= TIME_UNITS_PER_SEC/1000;
+		else if (strcasecmp(p, "us") == 0 || strcasecmp(p, "usec") == 0 ||
+			 strcasecmp(p, "usecs") == 0)
+			t *= TIME_UNITS_PER_SEC/1000000;
+		else
+			return -1;
+	}
+
+	*time = t;
+	return 0;
+}
+
+int tc_netem_add() {
+  char k[16] = {};
+
+  struct tc_netem_qopt opt = { .limit = 1000 };
+  struct tc_netem req;
+	struct rtattr *tail;
+
+  int fd = socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE);
+
+  req.n.nlmsg_len = NLMSG_LENGTH(sizeof(struct tcmsg)),
+  req.n.nlmsg_flags = NLM_F_REQUEST | NLM_F_EXCL| NLM_F_CREATE,
+  req.n.nlmsg_type = RTM_NEWQDISC,
+  req.t.tcm_family = AF_UNSPEC,
+
+  req.t.tcm_ifindex = 34;
+  req.t.tcm_parent = TC_H_ROOT;
+	strncpy(k, "netem", sizeof(k)-1);
+	addattr_l(&req.n, sizeof(req), TCA_KIND, k, strlen(k)+1);
+
+	tail = NLMSG_TAIL(&req.n);
+  get_time(&opt.latency, "100ms");
+  addattr_l(&req.n, 1024, TCA_OPTIONS, &opt, sizeof(opt));
+  hexdump1(stdout, &req, 100);
+  struct iovec iov = {&req, req.n.nlmsg_len };
+
+  nl_talk_iov(fd, &iov);
+}

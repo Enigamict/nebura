@@ -17,6 +17,10 @@
 #include <linux/rtnetlink.h>
 #include <linux/genetlink.h>
 
+#define TCA_BUF_MAX	(64*1024)
+#define TC_H_ROOT	(0xFFFFFFFFU)
+#define TIME_UNITS_PER_SEC	1000000
+
 struct netlink_msg{
     struct nlmsghdr n;
     struct rtmsg r;
@@ -48,4 +52,19 @@ struct ipv6_sr_hdr {
 struct seg6_iptunnel_encap {
 	int mode;
 	struct ipv6_sr_hdr srh[];
+};
+
+struct tc_netem_qopt {
+	__u32	latency;	/* added delay (us) */
+	__u32   limit;		/* fifo limit (packets) */
+	__u32	loss;		/* random packet loss (0=none ~0=100%) */
+	__u32	gap;		/* re-ordering gap (0 for none) */
+	__u32   duplicate;	/* random packet dup  (0=none ~0=100%) */
+	__u32	jitter;		/* random jitter in latency (us) */
+};
+
+struct tc_netem {
+	struct nlmsghdr	n;
+	struct tcmsg	t;
+	char   buf[TCA_BUF_MAX];
 };
