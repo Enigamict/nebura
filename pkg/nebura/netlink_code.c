@@ -172,6 +172,7 @@ int seg6_end_aciton(struct in6_addr dst_addr) {
   struct iovec iov = {&req, req.n.nlmsg_len };
 
   nl_talk_iov(fd, &iov);
+  return 1; 
 
   //parse(answer, sizeof(buf));
 
@@ -228,6 +229,7 @@ int seg6_route_add(struct in_addr dst_addr) {
   struct iovec iov = {&req, req.n.nlmsg_len };
 
   nl_talk_iov(fd, &iov);
+  return 1; 
 
   //parse(answer, sizeof(buf));
 
@@ -260,30 +262,75 @@ int get_time(unsigned int *time, const char *str)
 	return 0;
 }
 
-int tc_netem_add() {
+static double tick_in_usec = 1;
+static double clock_factor = 1;
+
+static int get_ticks(__u32 *ticks, const char *str)
+{
+	unsigned int t;
+
+	if (get_time(&t, str))
+		return -1;
+
+
+	*ticks = t * tick_in_usec;
+	return 0;
+}
+int tc_core_init(void) // TCは起動時にカーネルクロックについての初期化を行う。具体的に何を行っているかは不明....
+{
+	FILE *fp;
+	__u32 clock_res;
+	__u32 t2us;
+	__u32 us2t;
+
+	fp = fopen("/proc/net/psched", "r");
+	if (fp == NULL)
+		return -1;
+
+	if (fscanf(fp, "%08x%08x%08x", &t2us, &us2t, &clock_res) != 3) {
+		fclose(fp);
+		return -1;
+	}
+	fclose(fp);
+
+	/* compatibility hack: for old iproute binaries (ignoring
+	 * the kernel clock resolution) the kernel advertises a
+	 * tick multiplier of 1000 in case of nano-second resolution,
+	 * which really is 1. */
+	if (clock_res == 1000000000)
+		t2us = us2t;
+
+	clock_factor  = (double)clock_res / TIME_UNITS_PER_SEC;
+	tick_in_usec = (double)t2us / us2t * clock_factor;
+  printf("%f", tick_in_usec);
+	return 0;
+}
+
+int tc_netem_add(int index, char *latestr) {
+
   char k[16] = {};
 
   struct tc_netem_qopt opt = { .limit = 1000 };
   struct tc_netem req;
-	struct rtattr *tail;
 
   int fd = socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE);
+
+  tc_core_init();
 
   req.n.nlmsg_len = NLMSG_LENGTH(sizeof(struct tcmsg)),
   req.n.nlmsg_flags = NLM_F_REQUEST | NLM_F_EXCL| NLM_F_CREATE,
   req.n.nlmsg_type = RTM_NEWQDISC,
   req.t.tcm_family = AF_UNSPEC,
 
-  req.t.tcm_ifindex = 34;
+  req.t.tcm_ifindex = index;
   req.t.tcm_parent = TC_H_ROOT;
 	strncpy(k, "netem", sizeof(k)-1);
 	addattr_l(&req.n, sizeof(req), TCA_KIND, k, strlen(k)+1);
-
-	tail = NLMSG_TAIL(&req.n);
-  get_time(&opt.latency, "100ms");
+  get_ticks(&opt.latency, latestr);
   addattr_l(&req.n, 1024, TCA_OPTIONS, &opt, sizeof(opt));
   hexdump1(stdout, &req, 100);
   struct iovec iov = {&req, req.n.nlmsg_len };
 
   nl_talk_iov(fd, &iov);
+	return 0;
 }

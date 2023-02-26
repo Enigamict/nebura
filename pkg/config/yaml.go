@@ -10,6 +10,10 @@ type BgpConf struct {
 	BgpConf []PeerConf `yaml:"bgpconfig"`
 }
 
+type TcConf struct {
+	TcConf []TcConf `yaml:"tcconfig"`
+}
+
 type PeerConf struct {
 	Select     string     `yaml:"select"`
 	Id         string     `yaml:"id"`

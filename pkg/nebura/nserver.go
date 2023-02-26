@@ -41,6 +41,7 @@ const (
 	bgpRouteAdd     uint8 = 2
 	bgpIPv6RouteAdd uint8 = 3
 	bgpRIBFind      uint8 = 4
+	tcNetem         uint8 = 5
 )
 
 type RIBPrefix struct {
@@ -182,6 +183,16 @@ func RibInit() Rib {
 	}
 }
 
+func (n *Nserver) NetlinkSendTcNetem(data []byte) error {
+
+	s := fmt.Sprintf("%s", data[0:5])
+	index := uint8(data[5])
+	fmt.Printf("%s", s)
+
+	C.tc_netem_add(C.int(index), C.CString(s))
+	return nil
+}
+
 func (n *Nserver) NetlinkSendRouteAdd(data []byte) error {
 
 	fmt.Printf("%v", data)
@@ -205,7 +216,7 @@ func (n *Nserver) NetlinkSendRouteAdd(data []byte) error {
 
 	r.RibAdd(a)
 
-	//C.ipv4_route_add(C.CString(dstPrefix.String()), C.CString(srcPrefix.String()), C.int(index))
+	C.ipv4_route_add(C.CString(dstPrefix.String()), C.CString(srcPrefix.String()), C.int(index))
 	return nil
 }
 
@@ -277,6 +288,8 @@ func (n *Nserver) neburaEvent(h *ApiHeader, data []byte) {
 		NetlinkSendIPv6RouteAdd(data)
 	case bgpRIBFind:
 		n.NclientRibFind()
+	case tcNetem:
+		n.NetlinkSendTcNetem(data)
 	default:
 		log.Printf("not type")
 	}

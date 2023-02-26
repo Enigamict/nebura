@@ -99,11 +99,12 @@ int nl_talk_iov(int fd, struct iovec *iov)
   for (rnh = (struct nlmsghdr *)recv_buf; NLMSG_OK(rnh, recv_len); rnh = NLMSG_NEXT(rnh, recv_len))
   {
 
-    if (rnh->nlmsg_type == NLMSG_ERROR)
-    {
+    if (rnh->nlmsg_type == NLMSG_ERROR) {
       struct nlmsgerr *errmsg;
       errmsg = NLMSG_DATA(rnh);
       printf("%d, %s\n", errmsg->error, strerror(-errmsg->error));
+      break;
+    }else{
       break;
     }
   }

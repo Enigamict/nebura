@@ -36,6 +36,11 @@ type NclientIPv6RouteAdd struct {
 	NLRI    Prefix
 }
 
+type SendNclientTcNetem struct {
+	rate  string
+	inter uint8
+}
+
 type Nclient struct {
 	Type string
 	Conn net.Conn
@@ -52,6 +57,19 @@ func (n *NclientRouteAdd) writeTo() ([]byte, error) {
 	buf = append(buf, n.Nexthop.PrefixLen)
 	buf = append(buf, n.Nexthop.Prefix[:dstBlen]...)
 
+	return buf, nil
+}
+
+func (n *SendNclientTcNetem) writeTo() ([]byte, error) {
+
+	var buf []byte
+
+	for i := 0; i < len(n.rate); i++ {
+		buf = append(buf, []byte(n.rate)[i])
+	}
+
+	index, _ := net.InterfaceByName("enp0s1")
+	buf = append(buf, byte(index.Index))
 	return buf, nil
 }
 
@@ -122,6 +140,18 @@ func (n *Nclient) SendNclientIPv6RouteAdd(prefix net.IP, nexthop net.IP, len uin
 	}
 
 	n.sendNclientAPI(3, body)
+	return nil
+
+}
+
+func (n *Nclient) SendNclientTcNetem(inter uint8, rate string) error {
+
+	body := &SendNclientTcNetem{
+		inter: inter,
+		rate:  rate,
+	}
+
+	n.sendNclientAPI(5, body)
 	return nil
 
 }

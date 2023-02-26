@@ -6,9 +6,6 @@ import (
 	"io"
 	"log"
 	"net"
-
-	"github.com/Enigamict/zebraland/pkg/config"
-	"github.com/Enigamict/zebraland/pkg/nebura"
 )
 
 type Prefix struct {
@@ -45,16 +42,26 @@ func Write(c net.Conn) error {
 	var buf []byte
 	buf = make([]byte, 3)
 
-	binary.BigEndian.PutUint16(buf[0:2], 13)
-	buf[2] = uint8(4)
+	binary.BigEndian.PutUint16(buf[0:2], 9)
+	buf[2] = uint8(5)
 
-	tmpbuf := make([]byte, 10, 10)
-	buf = append(buf, tmpbuf...)
-	_, err := c.Write(buf)
-
-	if err != nil {
-		log.Println(err)
+	for i := 0; i < len("100ms"); i++ {
+		buf = append(buf, []byte("100ms")[i])
 	}
+
+	s := fmt.Sprintf("%s", buf[3:8])
+	index, _ := net.InterfaceByName("veth1")
+
+	fmt.Printf("%s", s)
+	fmt.Printf("%d", index.Index)
+	fmt.Printf("%v", buf)
+
+	buf = append(buf, byte(index.Index))
+	_, err := c.Write(buf)
+	if err != nil {
+		return nil
+	}
+
 	return nil
 }
 
@@ -66,29 +73,29 @@ func NeburaRead(c net.Conn) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("%v", buf)
+	fmt.Printf("%x", buf)
 	return buf, nil
 }
 func main() {
 
-	a, _ := config.ReadConfing("../../conf/static.yaml")
-	fmt.Printf("%v", a[0].Prefix.SrcPrefix)
-	for {
-		p := nebura.PeerInit(65000, net.ParseIP("1.1.1.1").To4(), net.ParseIP("10.255.1.1"), "nebura")
-		go p.Run()
+	//a, _ := config.ReadConfing("../../conf/static.yaml")
+	//fmt.Printf("%v", a[0].Prefix.SrcPrefix)
+	//for {
+	//	p := nebura.PeerInit(65000, net.ParseIP("1.1.1.1").To4(), net.ParseIP("10.255.1.1"), "nebura")
+	//	go p.Run()
 
-		p1 := nebura.PeerInit(65001, net.ParseIP("1.1.1.2").To4(), net.ParseIP("10.255.2.2"), "nebura")
-		p1.Run()
+	//	p1 := nebura.PeerInit(65001, net.ParseIP("1.1.1.2").To4(), net.ParseIP("10.255.2.2"), "nebura")
+	//	p1.Run()
+	//}
+	conn, err := net.Dial(protocol, sockAddr)
+	if err != nil {
+		log.Fatal(err)
 	}
-	//conn, err := net.Dial(protocol, sockAddr)
-	//if err != nil {
-	//	log.Fatal(err)
-	//}
 
-	//err = Write(conn)
-	//if err != nil {
-	//	log.Fatal(err)
-	//}
+	err = Write(conn)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	//NeburaRead(conn)
 

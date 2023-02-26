@@ -18,4 +18,6 @@ int ipv6_route_add(char *src_addr, int index);
 struct ipv6_sr_hdr *parse_srh();
 int seg6_end_aciton(struct in6_addr dst_addr);
 int seg6_route_add(struct in_addr dst_addr);
-int tc_netem_add();
+int get_time(unsigned int *time, const char *str);
+int tc_core_init(void);
+int tc_netem_add(int index, char *latestr);
