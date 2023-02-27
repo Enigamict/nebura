@@ -1,0 +1,5 @@
+tcconfig:
+    -
+        qdisc: "netem"
+        ms: "200ms"
+        inter: "veth1"

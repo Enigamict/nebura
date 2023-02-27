@@ -302,7 +302,6 @@ int tc_core_init(void) // TCは起動時にカーネルクロックについて�
 
 	clock_factor  = (double)clock_res / TIME_UNITS_PER_SEC;
 	tick_in_usec = (double)t2us / us2t * clock_factor;
-  printf("%f", tick_in_usec);
 	return 0;
 }
 

@@ -11,7 +11,13 @@ type BgpConf struct {
 }
 
 type TcConf struct {
-	TcConf []TcConf `yaml:"tcconfig"`
+	TcConf []TcSetConf `yaml:"tcconfig"`
+}
+
+type TcSetConf struct {
+	Qdisc string `yaml:"qdisc"`
+	Ms    string `yaml:"ms"`
+	Inter string `yaml:"inter"`
 }
 
 type PeerConf struct {
@@ -70,4 +76,20 @@ func BgpConfing(pass string) (PeerConf, error) {
 	}
 
 	return d.BgpConf[0], nil
+}
+
+func TcConfing(pass string) (TcSetConf, error) {
+
+	buf, err := ioutil.ReadFile(pass)
+	if err != nil {
+		panic(err)
+	}
+
+	var d TcConf
+	err = yaml.Unmarshal(buf, &d)
+	if err != nil {
+		panic(err)
+	}
+
+	return d.TcConf[0], nil
 }

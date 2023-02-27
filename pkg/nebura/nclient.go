@@ -38,7 +38,7 @@ type NclientIPv6RouteAdd struct {
 
 type SendNclientTcNetem struct {
 	rate  string
-	inter uint8
+	inter string
 }
 
 type Nclient struct {
@@ -68,7 +68,7 @@ func (n *SendNclientTcNetem) writeTo() ([]byte, error) {
 		buf = append(buf, []byte(n.rate)[i])
 	}
 
-	index, _ := net.InterfaceByName("enp0s1")
+	index, _ := net.InterfaceByName(n.inter)
 	buf = append(buf, byte(index.Index))
 	return buf, nil
 }
@@ -122,6 +122,8 @@ func (n *Nclient) SendNclientIPv4RouteAdd(prefix net.IP, nexthop net.IP, len uin
 		},
 	}
 
+	NeburaHdrSize = 13
+
 	n.sendNclientAPI(2, body)
 	return nil
 
@@ -144,19 +146,21 @@ func (n *Nclient) SendNclientIPv6RouteAdd(prefix net.IP, nexthop net.IP, len uin
 
 }
 
-func (n *Nclient) SendNclientTcNetem(inter uint8, rate string) error {
+func (n *Nclient) SendNclientTcNetem(inter string, rate string) error {
 
 	body := &SendNclientTcNetem{
 		inter: inter,
 		rate:  rate,
 	}
 
+	NeburaHdrSize = 9
+
 	n.sendNclientAPI(5, body)
 	return nil
 
 }
 
-func NclientInit() *Nclient {
+func NclientInit(ntype string) *Nclient {
 	conn, err := net.Dial("unix", "/tmp/test.sock")
 
 	if err != nil {
@@ -164,7 +168,7 @@ func NclientInit() *Nclient {
 	}
 
 	n := &Nclient{
-		Type: "BGP",
+		Type: ntype,
 		Conn: conn,
 	}
 

@@ -6,6 +6,10 @@ import (
 	"io"
 	"log"
 	"net"
+	"os"
+
+	"github.com/Enigamict/zebraland/pkg/config"
+	"github.com/Enigamict/zebraland/pkg/nebura"
 )
 
 type Prefix struct {
@@ -87,16 +91,19 @@ func main() {
 	//	p1 := nebura.PeerInit(65001, net.ParseIP("1.1.1.2").To4(), net.ParseIP("10.255.2.2"), "nebura")
 	//	p1.Run()
 	//}
-	conn, err := net.Dial(protocol, sockAddr)
+	var tcconfig string
+	for i, v := range os.Args {
+		fmt.Printf("args[%d] -> %s\n", i, v)
+		tcconfig = v
+	}
+
+	c, err := config.TcConfing(tcconfig)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	err = Write(conn)
-	if err != nil {
-		log.Fatal(err)
-	}
+	n := nebura.NclientInit("TC")
 
-	//NeburaRead(conn)
+	n.SendNclientTcNetem(c.Inter, c.Ms)
 
 }

@@ -20,7 +20,7 @@ import (
 
 type ApiType uint8
 
-const NeburaHdrSize = 13
+var NeburaHdrSize uint16
 
 var r Rib = RibInit()
 var RibCount = 0
