@@ -6,18 +6,28 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-type BgpConf struct {
-	BgpConf []PeerConf `yaml:"bgpconfig"`
-}
-
-type TcConf struct {
-	TcConf []TcSetConf `yaml:"tcconfig"`
-}
-
 type TcSetConf struct {
 	Qdisc string `yaml:"qdisc"`
 	Ms    string `yaml:"ms"`
 	Inter string `yaml:"inter"`
+}
+
+type IPPrefixAdd struct {
+	SrcAddr string `yaml:"srcaddr"`
+	DstAddr string `yaml:"dstaddr"`
+	Index   uint8  `yaml:"index"`
+}
+
+type Seg6Add struct {
+	Segs    string `yaml:"segs"`
+	DstAddr string `yaml:"dstaddr"`
+	Index   uint8  `yaml:"index"`
+}
+
+type EndActionAdd struct {
+	EndAction string `yaml:"segs"`
+	DstAddr   string `yaml:"dstaddr"`
+	Index     uint8  `yaml:"index"`
 }
 
 type PeerConf struct {
@@ -26,8 +36,15 @@ type PeerConf struct {
 	As         uint16     `yaml:"as"`
 	PeerPrefix PeerPrefix `yaml:"peer"`
 }
+
 type PeerPrefix struct {
 	NeiAddr string `yaml:"neiaddr"`
+}
+type StaticConf struct {
+	IPPrefixAdd  IPPrefixAdd  `yaml:"ipconfig"`
+	Seg6Add      Seg6Add      `yaml:"srv6config"`
+	EndActionAdd EndActionAdd `yaml:"srv6endconfig"`
+	TcConf       TcSetConf    `yaml:"tcconfig"`
 }
 
 type Data struct {
@@ -35,19 +52,13 @@ type Data struct {
 }
 
 type Conf struct {
-	Select      string     `yaml:"select"`
-	Static      bool       `yaml:"static"`
-	DeviceIndex int        `yaml:"DeviceIndex"`
-	Prefix      ConfPrefix `yaml:"prefix"`
+	Select     string     `yaml:"select"`
+	FibInstall bool       `yaml:"fib_install"`
+	StaticConf StaticConf `yaml:"staticconfig"`
+	BgpConf    PeerConf   `yaml:"bgpconfig"`
 }
 
-type ConfPrefix struct {
-	SrcPrefix []string `yaml:"srcprefix"`
-	DstPrefix string   `yaml:"dstprefix"`
-}
-
-func ReadConfing(pass string) ([]Conf, error) {
-
+func ReadConfig(pass string) (Conf, error) {
 	buf, err := ioutil.ReadFile(pass)
 	if err != nil {
 		panic(err)
@@ -58,38 +69,5 @@ func ReadConfing(pass string) ([]Conf, error) {
 	if err != nil {
 		panic(err)
 	}
-
-	return d.Conf[:], nil
-}
-
-func BgpConfing(pass string) (PeerConf, error) {
-
-	buf, err := ioutil.ReadFile(pass)
-	if err != nil {
-		panic(err)
-	}
-
-	var d BgpConf
-	err = yaml.Unmarshal(buf, &d)
-	if err != nil {
-		panic(err)
-	}
-
-	return d.BgpConf[0], nil
-}
-
-func TcConfing(pass string) (TcSetConf, error) {
-
-	buf, err := ioutil.ReadFile(pass)
-	if err != nil {
-		panic(err)
-	}
-
-	var d TcConf
-	err = yaml.Unmarshal(buf, &d)
-	if err != nil {
-		panic(err)
-	}
-
-	return d.TcConf[0], nil
+	return d.Conf[0], nil
 }

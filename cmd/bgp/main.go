@@ -19,25 +19,13 @@ func main() {
 		bgpconfig = v
 	}
 
-	c, err := config.BgpConfing(bgpconfig)
+	c, err := config.ReadConfig(bgpconfig)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	switch c.Select {
-	case "nebura":
-		for {
-			p := nebura.PeerInit(c.As, net.ParseIP(c.Id).To4(), net.ParseIP(c.PeerPrefix.NeiAddr), c.Select)
-			p.Run()
-		}
-		//p.PeerListen()
-	case "zebra":
-		for {
-			p := nebura.PeerInit(c.As, net.ParseIP(c.Id).To4(), net.ParseIP(c.PeerPrefix.NeiAddr), c.Select)
-			p.Run()
-		}
-	default:
-		log.Printf("Plase select Routing Software to Zebra or Nebura\n")
+	for {
+		p := nebura.PeerInit(c.BgpConf.As, net.ParseIP(c.BgpConf.Id).To4(), net.ParseIP(c.BgpConf.PeerPrefix.NeiAddr).To4(), c.Select)
+		p.Run()
 	}
-
 }

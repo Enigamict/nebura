@@ -26,13 +26,32 @@ var r Rib = RibInit()
 var RibCount = 0
 
 type (
-	NeburaEvent interface {
-		Loop(*Nserver) error
+	ServerEvent interface {
+		Sevent(*Nserver) error
 	}
 
 	NservAccept struct{}
-	NservMsgOk  struct{}
-	NservFail   struct{}
+	NservMsg    struct {
+		api  ApiHeader
+		data []byte
+	}
+	NservFail struct{}
+)
+
+type (
+	ClientEvent interface {
+		Cevent(*Nserver) error
+	}
+
+	NservClientRead struct {
+		hdr  []byte
+		data []byte
+	}
+	NservClientWrite struct{}
+	NservMsgSend     struct { // いずれ消す
+		api  ApiHeader
+		data []byte
+	}
 )
 
 const (
@@ -58,36 +77,73 @@ type Rib struct {
 }
 
 type Nserver struct {
-	lis       net.Listener
-	Conn      net.Conn
-	eventChan chan NeburaEvent
-	Rib       Rib
+	lis        net.Listener
+	Conn       net.Conn
+	eventChan  chan ServerEvent
+	ceventChan chan ClientEvent
+	Rib        Rib
 }
 
-func (n NservAccept) Loop(ns *Nserver) error {
-	ns.NeburaByteRead()
+func (n NservAccept) Sevent(ns *Nserver) error {
+	for {
+		var err error
+		ns.Conn, err = ns.lis.Accept()
+		log.Printf("Nebura Server Sock number %d...\n", ns.Conn)
+		if err != nil {
+			log.Fatal(err)
+		}
+		ns.NeburaRead()
+
+	}
+}
+
+func (n NservMsgSend) Cevent(ns *Nserver) error {
+
+	log.Printf("Nebura Server Sock numbe")
+	switch n.api.Type {
+	case staticRouteAdd:
+		NetlinkSendStaticRouteAdd(n.data)
+	case bgpRouteAdd:
+		ns.NetlinkSendRouteAdd(n.data)
+	case bgpIPv6RouteAdd:
+		NetlinkSendIPv6RouteAdd(n.data)
+	case bgpRIBFind:
+		ns.NclientRibFind()
+	case tcNetem:
+		ns.NetlinkSendTcNetem(n.data)
+	default:
+		log.Printf("not type")
+	}
+
 	return nil
 }
 
-func (n NservMsgOk) Loop(ns *Nserver) error {
+func (n NservClientRead) Cevent(ns *Nserver) error {
+	hd := &ApiHeader{}
+	hd.DecodeApiHdr(n.hdr)
+
+	ns.ceventChan <- NservMsgSend{*hd, n.data}
 	return nil
 }
 
-func (n NservFail) Loop(ns *Nserver) error {
-
-	ns.Conn.Close()
-	close(ns.eventChan)
-	return nil
-}
-
-func (n *Nserver) Run() error {
-
-	n.eventChan <- NservAccept{}
+func (n *Nserver) ServerSendEvent() error {
 
 	for {
 		select {
 		case e := <-n.eventChan:
-			if err := e.Loop(n); err != nil {
+			if err := e.Sevent(n); err != nil {
+				return err
+			}
+		}
+	}
+}
+
+func (n *Nserver) ClientSendEvent() error {
+
+	for {
+		select {
+		case e := <-n.ceventChan:
+			if err := e.Cevent(n); err != nil {
 				return err
 			}
 		}
@@ -159,7 +215,7 @@ func (r *Rib) RibFind(prefix net.IP) bool {
 	return p
 }
 
-func (r *Rib) RibAdd(addRoute RIBPrefix) error {
+func (r *Rib) RibAdd(addRoute RIBPrefix) error { // Addだけで良い、Ribと決まっているから
 
 	defer r.mu.Unlock()
 	r.mu.Lock()
@@ -202,7 +258,6 @@ func (n *Nserver) NetlinkSendRouteAdd(data []byte) error {
 	index, err := NexthopPrefixIndex(srcPrefix.String())
 
 	if err != nil {
-		n.eventChan <- NservFail{}
 		return nil
 	}
 
@@ -255,11 +310,8 @@ func (n *Nserver) NeburaRead() error {
 		return nil
 	}
 
-	hd := &ApiHeader{}
-	hd.DecodeApiHdr(header[:])
-
-	n.neburaEvent(hd, buf)
-
+	go n.ClientSendEvent()
+	n.ceventChan <- NservClientRead{header[:], buf}
 	return nil
 }
 
@@ -277,8 +329,6 @@ func (n *Nserver) NclientRibFind() {
 
 func (n *Nserver) neburaEvent(h *ApiHeader, data []byte) {
 
-	n.eventChan <- NservMsgOk{}
-
 	switch h.Type {
 	case staticRouteAdd:
 		NetlinkSendStaticRouteAdd(data)
@@ -295,16 +345,6 @@ func (n *Nserver) neburaEvent(h *ApiHeader, data []byte) {
 	}
 }
 
-func (n *Nserver) NeburaByteRead() {
-
-	err := n.NeburaRead()
-	if err != nil {
-		log.Println(err)
-		n.eventChan <- NservFail{}
-	}
-
-}
-
 func signalNotify() {
 	quit := make(chan os.Signal)
 	signal.Notify(quit, os.Interrupt)
@@ -313,21 +353,6 @@ func signalNotify() {
 		os.Remove("/tmp/test.sock")
 		os.Exit(1)
 	}()
-
-}
-
-func (n *Nserver) NserverAccept() {
-
-	for {
-		var err error
-		n.Conn, err = n.lis.Accept()
-		log.Printf("Nebura Server Sock number %d...\n", n.Conn)
-		if err != nil {
-			log.Fatal(err)
-			n.eventChan <- NservFail{}
-		}
-		go n.Run()
-	}
 
 }
 
@@ -341,9 +366,12 @@ func NserverStart() {
 	go signalNotify()
 
 	n := &Nserver{
-		lis:       listener,
-		eventChan: make(chan NeburaEvent, 10),
+		lis:        listener,
+		eventChan:  make(chan ServerEvent, 10),
+		ceventChan: make(chan ClientEvent, 10),
 	}
 
-	n.NserverAccept()
+	n.eventChan <- NservAccept{}
+	n.ServerSendEvent()
+
 }

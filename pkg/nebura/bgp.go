@@ -30,12 +30,12 @@ type (
 
 	ConectActiveEvent struct{}
 
-	OpenSentEvent    struct{}
+	OpenSentEvent struct{}
+
 	OpenConfirmEvent struct {
-		data []byte
 	}
+
 	EstabEvent struct {
-		data []byte
 	}
 
 	UpdateEvent struct {
@@ -362,9 +362,9 @@ func (p *Peer) BgpRecvMsg() {
 
 		switch TypeCode {
 		case BgpOpenType:
-			p.eventChan <- OpenConfirmEvent{buf}
+			p.eventChan <- OpenConfirmEvent{}
 		case BgpKeepAliveType:
-			p.eventChan <- EstabEvent{buf}
+			p.eventChan <- EstabEvent{}
 		case BgpUpdateType:
 			p.eventChan <- UpdateEvent{buf}
 		default:

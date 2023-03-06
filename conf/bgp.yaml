@@ -1,8 +1,8 @@
 bgpconfig:
     -
-        select: nebura
-        id: "10.255.3.4"
+        select: zebra
+        id: "1.1.1.2"
         fib_install: true
-        as: 65002
+        as: 65001
         peer:
-            neiaddr: "10.255.3.1"
+            neiaddr: "10.0.0.2"
