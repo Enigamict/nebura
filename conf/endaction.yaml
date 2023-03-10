@@ -1,0 +1,6 @@
+config:
+    -
+        select: nebura
+        srv6endconfig: 
+          endaction: "END.DX4"
+          DstAddr: "10.0.0.2"

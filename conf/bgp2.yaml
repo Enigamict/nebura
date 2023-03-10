@@ -1,8 +1,0 @@
-bgpconfig:
-    -
-        select: nebura
-        id: "10.255.2.3"
-        fib_install: true
-        as: 65002
-        peer:
-            neiaddr: "10.255.2.2"

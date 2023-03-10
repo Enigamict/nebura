@@ -75,6 +75,8 @@ int ipv4_route_add(char *src_addr, char *dst_addr, int index) {
 int ipv6_route_add(char *src_addr, int index) {
 struct netlink_msg req;
 
+  struct in6_addr add_v6prefix;
+  inet_pton(AF_INET6, src_addr, &add_v6prefix);
   int fd = socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE);
 
   if (fd < 0) {
@@ -85,7 +87,7 @@ struct netlink_msg req;
   req.n.nlmsg_flags = NLM_F_REQUEST | NLM_F_CREATE | NLM_F_ACK | NLM_F_REPLACE;
   req.n.nlmsg_type  = RTM_NEWROUTE;
   req.r.rtm_family = AF_INET6;
-  req.r.rtm_dst_len = 128;
+  req.r.rtm_dst_len = 64;
   req.r.rtm_src_len = 0;
   req.r.rtm_tos = 0;
   req.r.rtm_table = RT_TABLE_MAIN; // 0xFE
@@ -94,12 +96,13 @@ struct netlink_msg req;
   req.r.rtm_type = RTN_UNICAST; // 0x01
   req.r.rtm_flags = 0;
  
-  addattr_l(&req.n, sizeof(req), RTA_DST, &src_addr, sizeof(struct in6_addr));
+  addattr_l(&req.n, sizeof(req), RTA_DST, &add_v6prefix, sizeof(struct in6_addr));
 
   uint32_t oif_idx = index; 
 	addattr32(&req.n, sizeof(req), RTA_OIF, oif_idx);
 
   struct iovec iov = {&req, req.n.nlmsg_len };
+  hexdump1(stdout, &req, 100);
 
   nl_talk_iov(fd, &iov);
   return 1; 

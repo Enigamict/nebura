@@ -1,0 +1,6 @@
+config:
+    -
+        select: nebura
+        ipconfig: 
+          srcaddr: "10.0.0.1"
+          dstaddr: "fc00:2::11"

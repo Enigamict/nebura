@@ -2,6 +2,9 @@ package nebura
 
 import (
 	"encoding/binary"
+	"encoding/hex"
+	"fmt"
+	"io"
 	"log"
 	"net"
 )
@@ -36,7 +39,7 @@ type NclientIPv6RouteAdd struct {
 	NLRI    Prefix
 }
 
-type SendNclientTcNetem struct {
+type NclientTcNetem struct {
 	rate  string
 	inter string
 }
@@ -46,7 +49,7 @@ type Nclient struct {
 	Conn net.Conn
 }
 
-func (n *NclientRouteAdd) writeTo() ([]byte, error) {
+func (n *NclientIPv6RouteAdd) writeTo() ([]byte, error) {
 
 	var buf []byte
 
@@ -60,7 +63,17 @@ func (n *NclientRouteAdd) writeTo() ([]byte, error) {
 	return buf, nil
 }
 
-func (n *SendNclientTcNetem) writeTo() ([]byte, error) {
+func (n *NclientRouteAdd) writeTo() ([]byte, error) {
+
+	var buf []byte
+	buf = append(buf, n.NLRI.Prefix[:]...)
+	buf = append(buf, n.NLRI.PrefixLen)
+	fmt.Printf("ipv6 buf:%v\n", net.IP(buf).To16())
+
+	return buf, nil
+}
+
+func (n *NclientTcNetem) writeTo() ([]byte, error) {
 
 	var buf []byte
 
@@ -93,6 +106,20 @@ func (api *ApiHeader) writeTo() ([]byte, error) {
 	}
 
 	return append(buf, hdr...), nil
+}
+
+func (n *Nclient) readNclietMsg() error {
+
+	for {
+		log.Printf("Read...\n")
+		var header [3]byte
+		_, err := io.ReadFull(n.Conn, header[:])
+
+		if err != nil {
+			log.Printf("err read")
+			return nil
+		}
+	}
 }
 
 func (n *Nclient) sendNclientAPI(rtype uint8, body Body) error {
@@ -133,7 +160,7 @@ func (n *Nclient) SendNclientIPv6RouteAdd(prefix net.IP, nexthop net.IP, len uin
 
 	body := &NclientRouteAdd{
 		Nexthop: Prefix{
-			Prefix: nexthop.To16(),
+			Prefix: nexthop,
 		},
 		NLRI: Prefix{
 			Prefix:    prefix.To16(),
@@ -141,6 +168,8 @@ func (n *Nclient) SendNclientIPv6RouteAdd(prefix net.IP, nexthop net.IP, len uin
 		},
 	}
 
+	NeburaHdrSize = 20
+	fmt.Printf("body :%s", hex.Dump(body.NLRI.Prefix))
 	n.sendNclientAPI(3, body)
 	return nil
 
@@ -148,7 +177,7 @@ func (n *Nclient) SendNclientIPv6RouteAdd(prefix net.IP, nexthop net.IP, len uin
 
 func (n *Nclient) SendNclientTcNetem(inter string, rate string) error {
 
-	body := &SendNclientTcNetem{
+	body := &NclientTcNetem{
 		inter: inter,
 		rate:  rate,
 	}

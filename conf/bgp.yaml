@@ -1,8 +1,0 @@
-bgpconfig:
-    -
-        select: zebra
-        id: "1.1.1.2"
-        fib_install: true
-        as: 65001
-        peer:
-            neiaddr: "10.0.0.2"

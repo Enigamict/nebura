@@ -1,5 +1,7 @@
-tcconfig:
+config:
     -
-        qdisc: "netem"
-        ms: "300ms"
-        inter: "veth1"
+        select: nebura
+        tcconfig: 
+            qdisc: "netem"
+            ms: "300ms"
+            inter: "veth1"

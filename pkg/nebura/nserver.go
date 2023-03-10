@@ -26,21 +26,8 @@ var r Rib = RibInit()
 var RibCount = 0
 
 type (
-	ServerEvent interface {
-		Sevent(*Nserver) error
-	}
-
-	NservAccept struct{}
-	NservMsg    struct {
-		api  ApiHeader
-		data []byte
-	}
-	NservFail struct{}
-)
-
-type (
 	ClientEvent interface {
-		Cevent(*Nserver) error
+		NecliEvent(*Nserver) error
 	}
 
 	NservClientRead struct {
@@ -55,7 +42,6 @@ type (
 )
 
 const (
-	testHello       uint8 = 0
 	staticRouteAdd  uint8 = 1
 	bgpRouteAdd     uint8 = 2
 	bgpIPv6RouteAdd uint8 = 3
@@ -79,27 +65,12 @@ type Rib struct {
 type Nserver struct {
 	lis        net.Listener
 	Conn       net.Conn
-	eventChan  chan ServerEvent
 	ceventChan chan ClientEvent
 	Rib        Rib
 }
 
-func (n NservAccept) Sevent(ns *Nserver) error {
-	for {
-		var err error
-		ns.Conn, err = ns.lis.Accept()
-		log.Printf("Nebura Server Sock number %d...\n", ns.Conn)
-		if err != nil {
-			log.Fatal(err)
-		}
-		ns.NeburaRead()
+func (n NservMsgSend) NecliEvent(ns *Nserver) error {
 
-	}
-}
-
-func (n NservMsgSend) Cevent(ns *Nserver) error {
-
-	log.Printf("Nebura Server Sock numbe")
 	switch n.api.Type {
 	case staticRouteAdd:
 		NetlinkSendStaticRouteAdd(n.data)
@@ -118,7 +89,7 @@ func (n NservMsgSend) Cevent(ns *Nserver) error {
 	return nil
 }
 
-func (n NservClientRead) Cevent(ns *Nserver) error {
+func (n NservClientRead) NecliEvent(ns *Nserver) error {
 	hd := &ApiHeader{}
 	hd.DecodeApiHdr(n.hdr)
 
@@ -126,24 +97,12 @@ func (n NservClientRead) Cevent(ns *Nserver) error {
 	return nil
 }
 
-func (n *Nserver) ServerSendEvent() error {
-
-	for {
-		select {
-		case e := <-n.eventChan:
-			if err := e.Sevent(n); err != nil {
-				return err
-			}
-		}
-	}
-}
-
 func (n *Nserver) ClientSendEvent() error {
 
 	for {
 		select {
 		case e := <-n.ceventChan:
-			if err := e.Cevent(n); err != nil {
+			if err := e.NecliEvent(n); err != nil {
 				return err
 			}
 		}
@@ -199,6 +158,10 @@ func prefixPadding(data []byte) net.IP {
 	return net.IP(data).To4()
 }
 
+func v6prefixPadding(data []byte) net.IP {
+	return net.IP(data).To16()
+}
+
 func (r *Rib) RibShow() {
 	fmt.Printf("RIB SHOW: %v\n", r.Preifx)
 }
@@ -242,10 +205,10 @@ func RibInit() Rib {
 func (n *Nserver) NetlinkSendTcNetem(data []byte) error {
 
 	s := fmt.Sprintf("%s", data[0:5])
-	index := uint8(data[5])
+	//index := uint8(data[5])
 	fmt.Printf("%s", s)
 
-	C.tc_netem_add(C.int(index), C.CString(s))
+	//C.tc_netem_add(C.int(index), C.CString(s))
 	return nil
 }
 
@@ -271,18 +234,14 @@ func (n *Nserver) NetlinkSendRouteAdd(data []byte) error {
 
 	r.RibAdd(a)
 
-	C.ipv4_route_add(C.CString(dstPrefix.String()), C.CString(srcPrefix.String()), C.int(index))
+	//C.ipv4_route_add(C.CString(dstPrefix.String()), C.CString(srcPrefix.String()), C.int(index))
 	return nil
 }
 
 func NetlinkSendIPv6RouteAdd(data []byte) error {
 
-	dstPrefix := prefixPadding(data[1:4])
-	srcPrefix := prefixPadding(data[9:13])
-
-	index, _ := NexthopPrefixIndex(srcPrefix.String())
-
-	C.ipv4_route_add(C.CString(dstPrefix.String()), C.CString(srcPrefix.String()), C.int(index))
+	dstPrefix := v6prefixPadding(data[0:16])
+	C.ipv6_route_add(C.CString(dstPrefix.String()), C.int(42))
 	return nil
 }
 
@@ -293,8 +252,29 @@ func (b *ApiHeader) DecodeApiHdr(data []byte) error {
 	return nil
 }
 
+func (n *Nserver) NserverRead(data []byte) {
+	hd := &ApiHeader{}
+	hd.DecodeApiHdr(data)
+
+	switch hd.Type {
+	case staticRouteAdd:
+		NetlinkSendStaticRouteAdd(data)
+	case bgpRouteAdd:
+		n.NetlinkSendRouteAdd(data)
+	case bgpIPv6RouteAdd:
+		NetlinkSendIPv6RouteAdd(data)
+	case bgpRIBFind:
+		n.NclientRibFind()
+	case tcNetem:
+		n.NetlinkSendTcNetem(data)
+	default:
+		log.Printf("not type")
+	}
+}
+
 func (n *Nserver) NeburaRead() error {
 
+	log.Printf("Msg Read...\n")
 	var header [3]byte
 	_, err := io.ReadFull(n.Conn, header[:])
 
@@ -312,6 +292,8 @@ func (n *Nserver) NeburaRead() error {
 
 	go n.ClientSendEvent()
 	n.ceventChan <- NservClientRead{header[:], buf}
+
+	//n.NserverRead(buf)
 	return nil
 }
 
@@ -325,24 +307,6 @@ func (n *Nserver) NclientRibFind() {
 	}
 
 	n.Conn.Write(buf)
-}
-
-func (n *Nserver) neburaEvent(h *ApiHeader, data []byte) {
-
-	switch h.Type {
-	case staticRouteAdd:
-		NetlinkSendStaticRouteAdd(data)
-	case bgpRouteAdd:
-		n.NetlinkSendRouteAdd(data)
-	case bgpIPv6RouteAdd:
-		NetlinkSendIPv6RouteAdd(data)
-	case bgpRIBFind:
-		n.NclientRibFind()
-	case tcNetem:
-		n.NetlinkSendTcNetem(data)
-	default:
-		log.Printf("not type")
-	}
 }
 
 func signalNotify() {
@@ -367,11 +331,20 @@ func NserverStart() {
 
 	n := &Nserver{
 		lis:        listener,
-		eventChan:  make(chan ServerEvent, 10),
 		ceventChan: make(chan ClientEvent, 10),
 	}
 
-	n.eventChan <- NservAccept{}
-	n.ServerSendEvent()
+	for {
+		var errr error
+		n.Conn, errr = n.lis.Accept()
+		log.Printf("Nebura Accept...\n")
+		if errr != nil {
+			log.Fatal(err)
+		}
+		n.NeburaRead()
+	}
 
+	//TestCallBackEvent(TestSendEvent)
+	//n.eventChan <- NservAccept{}
+	//n.ServerSendEvent()
 }

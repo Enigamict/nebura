@@ -26,6 +26,6 @@ func main() {
 
 	for {
 		p := nebura.PeerInit(c.BgpConf.As, net.ParseIP(c.BgpConf.Id).To4(), net.ParseIP(c.BgpConf.PeerPrefix.NeiAddr).To4(), c.Select)
-		p.Run()
+		p.BGPConectActive()
 	}
 }

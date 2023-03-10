@@ -15,19 +15,16 @@ type TcSetConf struct {
 type IPPrefixAdd struct {
 	SrcAddr string `yaml:"srcaddr"`
 	DstAddr string `yaml:"dstaddr"`
-	Index   uint8  `yaml:"index"`
 }
 
 type Seg6Add struct {
 	Segs    string `yaml:"segs"`
 	DstAddr string `yaml:"dstaddr"`
-	Index   uint8  `yaml:"index"`
 }
 
 type EndActionAdd struct {
-	EndAction string `yaml:"segs"`
+	EndAction string `yaml:"endaction"`
 	DstAddr   string `yaml:"dstaddr"`
-	Index     uint8  `yaml:"index"`
 }
 
 type PeerConf struct {
@@ -52,10 +49,13 @@ type Data struct {
 }
 
 type Conf struct {
-	Select     string     `yaml:"select"`
-	FibInstall bool       `yaml:"fib_install"`
-	StaticConf StaticConf `yaml:"staticconfig"`
-	BgpConf    PeerConf   `yaml:"bgpconfig"`
+	Select       string       `yaml:"select"`
+	FibInstall   bool         `yaml:"fib_install"`
+	IPPrefixAdd  IPPrefixAdd  `yaml:"ipconfig"`
+	Seg6Add      Seg6Add      `yaml:"srv6config"`
+	EndActionAdd EndActionAdd `yaml:"srv6endconfig"`
+	TcConf       TcSetConf    `yaml:"tcconfig"`
+	BgpConf      PeerConf     `yaml:"bgpconfig"`
 }
 
 func ReadConfig(pass string) (Conf, error) {

@@ -171,7 +171,6 @@ type BgpClient struct {
 	routeType RouteType
 	Conn      net.Conn
 	Version   uint8
-	Software  Software
 }
 
 type helloBody struct {
