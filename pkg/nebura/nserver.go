@@ -22,7 +22,7 @@ type ApiType uint8
 
 var NeburaHdrSize uint16
 
-var r Rib = RibInit()
+var r Rib = Init()
 var RibCount = 0
 
 type (
@@ -59,7 +59,7 @@ type RIBPrefix struct {
 
 type Rib struct {
 	mu     *sync.Mutex
-	Preifx map[int]RIBPrefix
+	Preifx map[string][]RIBPrefix
 }
 
 type Nserver struct {
@@ -67,46 +67,6 @@ type Nserver struct {
 	Conn       net.Conn
 	ceventChan chan ClientEvent
 	Rib        Rib
-}
-
-func (n NservMsgSend) NecliEvent(ns *Nserver) error {
-
-	switch n.api.Type {
-	case staticRouteAdd:
-		NetlinkSendStaticRouteAdd(n.data)
-	case bgpRouteAdd:
-		ns.NetlinkSendRouteAdd(n.data)
-	case bgpIPv6RouteAdd:
-		NetlinkSendIPv6RouteAdd(n.data)
-	case bgpRIBFind:
-		ns.NclientRibFind()
-	case tcNetem:
-		ns.NetlinkSendTcNetem(n.data)
-	default:
-		log.Printf("not type")
-	}
-
-	return nil
-}
-
-func (n NservClientRead) NecliEvent(ns *Nserver) error {
-	hd := &ApiHeader{}
-	hd.DecodeApiHdr(n.hdr)
-
-	ns.ceventChan <- NservMsgSend{*hd, n.data}
-	return nil
-}
-
-func (n *Nserver) ClientSendEvent() error {
-
-	for {
-		select {
-		case e := <-n.ceventChan:
-			if err := e.NecliEvent(n); err != nil {
-				return err
-			}
-		}
-	}
 }
 
 func NexthopPrefixIndex(prefix string) (int, error) {
@@ -143,6 +103,46 @@ func NexthopPrefixIndex(prefix string) (int, error) {
 	return index, nil
 }
 
+func (n NservMsgSend) NecliEvent(ns *Nserver) error {
+
+	switch n.api.Type {
+	case staticRouteAdd:
+		NetlinkSendStaticRouteAdd(n.data)
+	case bgpRouteAdd:
+		ns.NetlinkSendRouteAdd(n.data)
+	case bgpIPv6RouteAdd:
+		NetlinkSendIPv6RouteAdd(n.data)
+	case bgpRIBFind:
+		//ns.NclientRibFind()
+	case tcNetem:
+		ns.NetlinkSendTcNetem(n.data)
+	default:
+		log.Printf("not type")
+	}
+
+	return nil
+}
+
+func (n NservClientRead) NecliEvent(ns *Nserver) error {
+	hd := &ApiHeader{}
+	hd.DecodeApiHdr(n.hdr)
+
+	ns.ceventChan <- NservMsgSend{*hd, n.data}
+	return nil
+}
+
+func (n *Nserver) ClientSendEvent() error {
+
+	for {
+		select {
+		case e := <-n.ceventChan:
+			if err := e.NecliEvent(n); err != nil {
+				return err
+			}
+		}
+	}
+}
+
 func NetlinkSendStaticRouteAdd(data []byte) error {
 	dstPrefix := prefixPadding(data[4:8])
 	srcPrefix := prefixPadding(data[9:13])
@@ -163,42 +163,50 @@ func v6prefixPadding(data []byte) net.IP {
 }
 
 func (r *Rib) RibShow() {
-	fmt.Printf("RIB SHOW: %v\n", r.Preifx)
+
+	fmt.Printf("RIB SHOW\n")
+
+	for _, v := range r.Preifx["BGP"] {
+		fmt.Printf("%s: %s/%d via %s\n", v.RoutingProtocol, v.Prefix.String(),
+			v.PrefixLen, v.Nexthop.String())
+	}
+
 }
 
-func (r *Rib) RibFind(prefix net.IP) bool {
-
+func (r *Rib) RibFind(prefix net.IP, routeType string) bool {
 	defer r.mu.Lock()
 	r.mu.Unlock()
 	var p bool
-	for _, v := range r.Preifx {
+	for _, v := range r.Preifx[routeType] {
 		p = v.Prefix.Equal(prefix)
 	}
-
 	return p
 }
 
-func (r *Rib) RibAdd(addRoute RIBPrefix) error { // Addだけで良い、Ribと決まっているから
+func (r *Rib) Add(addRoute RIBPrefix) error { // Addだけで良い、Ribと決まっているから
 
 	defer r.mu.Unlock()
 	r.mu.Lock()
 
-	if r.RibFind(addRoute.Prefix) {
+	if r.RibFind(addRoute.Prefix, "BGP") { // BGP以外も入る
 		log.Printf("RIB Already in prefix")
 
 		return nil
 	}
 
-	r.Preifx[RibCount] = addRoute
-	RibCount++
+	r.Preifx[addRoute.RoutingProtocol] = append(r.Preifx[addRoute.RoutingProtocol],
+		addRoute)
+
 	r.RibShow()
+
+	RibCount++
 	return nil
 }
 
-func RibInit() Rib {
+func Init() Rib {
 	return Rib{
 		mu:     new(sync.Mutex),
-		Preifx: make(map[int]RIBPrefix),
+		Preifx: make(map[string][]RIBPrefix, 1000),
 	}
 }
 
@@ -214,7 +222,6 @@ func (n *Nserver) NetlinkSendTcNetem(data []byte) error {
 
 func (n *Nserver) NetlinkSendRouteAdd(data []byte) error {
 
-	fmt.Printf("%v", data)
 	dstPrefix := prefixPadding(data[1:5])
 	srcPrefix := prefixPadding(data[6:10])
 
@@ -232,7 +239,7 @@ func (n *Nserver) NetlinkSendRouteAdd(data []byte) error {
 		RoutingProtocol: "BGP",
 	}
 
-	r.RibAdd(a)
+	r.Add(a)
 
 	//C.ipv4_route_add(C.CString(dstPrefix.String()), C.CString(srcPrefix.String()), C.int(index))
 	return nil
@@ -250,26 +257,6 @@ func (b *ApiHeader) DecodeApiHdr(data []byte) error {
 	b.Len = binary.BigEndian.Uint16(data[0:2])
 	b.Type = data[2]
 	return nil
-}
-
-func (n *Nserver) NserverRead(data []byte) {
-	hd := &ApiHeader{}
-	hd.DecodeApiHdr(data)
-
-	switch hd.Type {
-	case staticRouteAdd:
-		NetlinkSendStaticRouteAdd(data)
-	case bgpRouteAdd:
-		n.NetlinkSendRouteAdd(data)
-	case bgpIPv6RouteAdd:
-		NetlinkSendIPv6RouteAdd(data)
-	case bgpRIBFind:
-		n.NclientRibFind()
-	case tcNetem:
-		n.NetlinkSendTcNetem(data)
-	default:
-		log.Printf("not type")
-	}
 }
 
 func (n *Nserver) NeburaRead() error {
@@ -293,21 +280,20 @@ func (n *Nserver) NeburaRead() error {
 	go n.ClientSendEvent()
 	n.ceventChan <- NservClientRead{header[:], buf}
 
-	//n.NserverRead(buf)
 	return nil
 }
 
-func (n *Nserver) NclientRibFind() {
-
-	var buf []byte
-
-	for _, v := range r.Preifx {
-		buf = append(buf, v.Prefix...)
-		log.Printf("%v", buf)
-	}
-
-	n.Conn.Write(buf)
-}
+//func (n *Nserver) NclientRibFind() {
+//
+//	var buf []byte
+//
+//	for _, v := range r.Preifx {
+//		buf = append(buf, v.Prefix...)
+//		log.Printf("%v", buf)
+//	}
+//
+//	n.Conn.Write(buf)
+//}
 
 func signalNotify() {
 	quit := make(chan os.Signal)

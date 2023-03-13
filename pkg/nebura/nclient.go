@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
-	"io"
 	"log"
 	"net"
 )
@@ -49,7 +48,7 @@ type Nclient struct {
 	Conn net.Conn
 }
 
-func (n *NclientIPv6RouteAdd) writeTo() ([]byte, error) {
+func (n *NclientRouteAdd) writeTo() ([]byte, error) {
 
 	var buf []byte
 
@@ -63,7 +62,7 @@ func (n *NclientIPv6RouteAdd) writeTo() ([]byte, error) {
 	return buf, nil
 }
 
-func (n *NclientRouteAdd) writeTo() ([]byte, error) {
+func (n *NclientIPv6RouteAdd) writeTo() ([]byte, error) {
 
 	var buf []byte
 	buf = append(buf, n.NLRI.Prefix[:]...)
@@ -108,19 +107,19 @@ func (api *ApiHeader) writeTo() ([]byte, error) {
 	return append(buf, hdr...), nil
 }
 
-func (n *Nclient) readNclietMsg() error {
-
-	for {
-		log.Printf("Read...\n")
-		var header [3]byte
-		_, err := io.ReadFull(n.Conn, header[:])
-
-		if err != nil {
-			log.Printf("err read")
-			return nil
-		}
-	}
-}
+//func (n *Nclient) readNclietMsg() error {
+//
+//	for {
+//		log.Printf("Read...\n")
+//		var header [3]byte
+//		_, err := io.ReadFull(n.Conn, header[:])
+//
+//		if err != nil {
+//			log.Printf("err read")
+//			return nil
+//		}
+//	}
+//}
 
 func (n *Nclient) sendNclientAPI(rtype uint8, body Body) error {
 	api := &ApiHeader{
