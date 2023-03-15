@@ -35,18 +35,18 @@ type (
 		data []byte
 	}
 	NservClientWrite struct{}
-	NservMsgSend     struct { // いずれ消す
+	NservMsgSend     struct {
 		api  ApiHeader
 		data []byte
 	}
 )
 
 const (
-	staticRouteAdd  uint8 = 1
-	bgpRouteAdd     uint8 = 2
-	bgpIPv6RouteAdd uint8 = 3
-	bgpRIBFind      uint8 = 4
-	tcNetem         uint8 = 5
+	staticRouteAdd uint8 = 1
+	bgpRouteAdd    uint8 = 2
+	IPv6RouteAdd   uint8 = 3
+	RIBFind        uint8 = 4
+	tcNetem        uint8 = 5
 )
 
 type RIBPrefix struct {
@@ -109,13 +109,13 @@ func (n NservMsgSend) NecliEvent(ns *Nserver) error {
 	case staticRouteAdd:
 		NetlinkSendStaticRouteAdd(n.data)
 	case bgpRouteAdd:
-		ns.NetlinkSendRouteAdd(n.data)
-	case bgpIPv6RouteAdd:
+		NetlinkSendRouteAdd(n.data)
+	case IPv6RouteAdd:
 		NetlinkSendIPv6RouteAdd(n.data)
-	case bgpRIBFind:
+	case RIBFind:
 		//ns.NclientRibFind()
 	case tcNetem:
-		ns.NetlinkSendTcNetem(n.data)
+		NetlinkSendTcNetem(n.data)
 	default:
 		log.Printf("not type")
 	}
@@ -144,12 +144,12 @@ func (n *Nserver) ClientSendEvent() error {
 }
 
 func NetlinkSendStaticRouteAdd(data []byte) error {
-	dstPrefix := prefixPadding(data[4:8])
-	srcPrefix := prefixPadding(data[9:13])
+	//dstPrefix := prefixPadding(data[4:8])
+	//srcPrefix := prefixPadding(data[9:13])
 
-	index, _ := NexthopPrefixIndex(srcPrefix.String())
+	//index, _ := NexthopPrefixIndex(srcPrefix.String())
 
-	C.ipv4_route_add(C.CString(dstPrefix.String()), C.CString(srcPrefix.String()), C.int(index))
+	//C.ipv4_route_add(C.CString(dstPrefix.String()), C.CString(srcPrefix.String()), C.int(index))
 
 	return nil
 }
@@ -210,7 +210,7 @@ func Init() Rib {
 	}
 }
 
-func (n *Nserver) NetlinkSendTcNetem(data []byte) error {
+func NetlinkSendTcNetem(data []byte) error {
 
 	s := fmt.Sprintf("%s", data[0:5])
 	//index := uint8(data[5])
@@ -220,8 +220,9 @@ func (n *Nserver) NetlinkSendTcNetem(data []byte) error {
 	return nil
 }
 
-func (n *Nserver) NetlinkSendRouteAdd(data []byte) error {
+func NetlinkSendRouteAdd(data []byte) error {
 
+	dstPrefixLen := uint8(data[0])
 	dstPrefix := prefixPadding(data[1:5])
 	srcPrefix := prefixPadding(data[6:10])
 
@@ -233,7 +234,7 @@ func (n *Nserver) NetlinkSendRouteAdd(data []byte) error {
 
 	a := RIBPrefix{
 		Prefix:          dstPrefix,
-		PrefixLen:       uint8(data[8]),
+		PrefixLen:       uint8(data[0]),
 		Nexthop:         srcPrefix,
 		Index:           uint8(index),
 		RoutingProtocol: "BGP",
@@ -241,14 +242,23 @@ func (n *Nserver) NetlinkSendRouteAdd(data []byte) error {
 
 	r.Add(a)
 
-	//C.ipv4_route_add(C.CString(dstPrefix.String()), C.CString(srcPrefix.String()), C.int(index))
+	C.ipv4_route_add(C.CString(dstPrefix.String()), C.CString(srcPrefix.String()),
+		C.int(index), C.int(dstPrefixLen))
 	return nil
 }
 
 func NetlinkSendIPv6RouteAdd(data []byte) error {
 
+	// TODO /64 /128 interfaceだけで入れたい場合を考える
+
+	fmt.Printf("data%v", data)
 	dstPrefix := v6prefixPadding(data[0:16])
-	C.ipv6_route_add(C.CString(dstPrefix.String()), C.int(42))
+
+	srcPrefix := v6prefixPadding(data[17:33])
+	fmt.Printf("prefix:%s", srcPrefix.String())
+	fmt.Printf("prefix:%s", dstPrefix.String())
+	C.ipv6_route_add(C.CString(srcPrefix.String()),
+		C.CString(dstPrefix.String()), C.int(40), C.int(128))
 	return nil
 }
 

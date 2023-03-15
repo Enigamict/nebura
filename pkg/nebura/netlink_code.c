@@ -21,7 +21,7 @@ void hexdump1(FILE* fp, const void *buffer, size_t bufferlen)
   }
 }
 
-int ipv4_route_add(char *src_addr, char *dst_addr, int index) {
+int ipv4_route_add(char *src_addr, char *dst_addr, int index, int len) {
 
   struct netlink_msg req;
 
@@ -41,7 +41,7 @@ int ipv4_route_add(char *src_addr, char *dst_addr, int index) {
   req.n.nlmsg_flags = NLM_F_REQUEST | NLM_F_CREATE | NLM_F_ACK | NLM_F_REPLACE;
   req.n.nlmsg_type  = RTM_NEWROUTE;
   req.r.rtm_family = AF_INET;
-  req.r.rtm_dst_len = 32;
+  req.r.rtm_dst_len = len;
   req.r.rtm_src_len = 0;
   req.r.rtm_tos = 0;
   req.r.rtm_table = RT_TABLE_MAIN; // 0xFE
@@ -72,11 +72,14 @@ int ipv4_route_add(char *src_addr, char *dst_addr, int index) {
 
 }
 
-int ipv6_route_add(char *src_addr, int index) {
+int ipv6_route_add(char *src_addr, char *dst_addr, int index, int len) {
 struct netlink_msg req;
 
   struct in6_addr add_v6prefix;
-  inet_pton(AF_INET6, src_addr, &add_v6prefix);
+  struct in6_addr via_v6prefix;
+  inet_pton(AF_INET6, dst_addr, &add_v6prefix);
+  inet_pton(AF_INET6, src_addr, &via_v6prefix);
+
   int fd = socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE);
 
   if (fd < 0) {
@@ -87,7 +90,7 @@ struct netlink_msg req;
   req.n.nlmsg_flags = NLM_F_REQUEST | NLM_F_CREATE | NLM_F_ACK | NLM_F_REPLACE;
   req.n.nlmsg_type  = RTM_NEWROUTE;
   req.r.rtm_family = AF_INET6;
-  req.r.rtm_dst_len = 64;
+  req.r.rtm_dst_len = len;
   req.r.rtm_src_len = 0;
   req.r.rtm_tos = 0;
   req.r.rtm_table = RT_TABLE_MAIN; // 0xFE
@@ -97,9 +100,11 @@ struct netlink_msg req;
   req.r.rtm_flags = 0;
  
   addattr_l(&req.n, sizeof(req), RTA_DST, &add_v6prefix, sizeof(struct in6_addr));
+  req.r.rtm_dst_len = len;
+  addattr_l(&req.n, sizeof(req),
+		  RTA_GATEWAY, &via_v6prefix,
+		  sizeof(struct in6_addr));
 
-  uint32_t oif_idx = index; 
-	addattr32(&req.n, sizeof(req), RTA_OIF, oif_idx);
 
   struct iovec iov = {&req, req.n.nlmsg_len };
   hexdump1(stdout, &req, 100);

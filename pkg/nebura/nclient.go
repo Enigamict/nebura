@@ -67,7 +67,7 @@ func (n *NclientIPv6RouteAdd) writeTo() ([]byte, error) {
 	var buf []byte
 	buf = append(buf, n.NLRI.Prefix[:]...)
 	buf = append(buf, n.NLRI.PrefixLen)
-	fmt.Printf("ipv6 buf:%v\n", net.IP(buf).To16())
+	buf = append(buf, n.Nexthop.Prefix[:]...)
 
 	return buf, nil
 }
@@ -155,20 +155,26 @@ func (n *Nclient) SendNclientIPv4RouteAdd(prefix net.IP, nexthop net.IP, len uin
 
 }
 
-func (n *Nclient) SendNclientIPv6RouteAdd(prefix net.IP, nexthop net.IP, len uint8) error {
+func (n *Nclient) SendNclientIPv6RouteAdd(prefix string, nexthop string, len uint8, index uint8) error {
 
-	body := &NclientRouteAdd{
+	NexthopPrefix := net.ParseIP(nexthop).To16()
+	AddPrefix := net.ParseIP(prefix).To16() // TODO: なぜか直接メンバ内でTo16()を実行すると、バイナリが入らないのでここで作ってから入れています
+
+	body := &NclientIPv6RouteAdd{
 		Nexthop: Prefix{
-			Prefix: nexthop,
+			Prefix: NexthopPrefix,
 		},
 		NLRI: Prefix{
-			Prefix:    prefix.To16(),
+			Prefix:    AddPrefix,
 			PrefixLen: len,
 		},
 	}
 
-	NeburaHdrSize = 20
-	fmt.Printf("body :%s", hex.Dump(body.NLRI.Prefix))
+	NeburaHdrSize = 36
+
+	fmt.Printf("hex:%s", hex.Dump(body.Nexthop.Prefix))
+	fmt.Printf("hex:%s", body.Nexthop.Prefix.String())
+
 	n.sendNclientAPI(3, body)
 	return nil
 
@@ -188,7 +194,7 @@ func (n *Nclient) SendNclientTcNetem(inter string, rate string) error {
 
 }
 
-func NclientInit(ntype string) *Nclient {
+func NclientInit() *Nclient {
 	conn, err := net.Dial("unix", "/tmp/test.sock")
 
 	if err != nil {
@@ -196,7 +202,6 @@ func NclientInit(ntype string) *Nclient {
 	}
 
 	n := &Nclient{
-		Type: ntype,
 		Conn: conn,
 	}
 
