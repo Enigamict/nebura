@@ -177,7 +177,7 @@ func NetlinkSendSrEndAction(data []byte) error {
 	encapPrefix := v6prefixPadding(data[1:17])
 	dstPrefix := prefixPadding(data[17:21])
 	switch endAction {
-	case EndDX4: // indexをなんとかする
+	case EndDX4: // TODO index
 		C.seg6_end_aciton(C.CString(encapPrefix.String()), C.CString(dstPrefix.String()))
 	}
 	return nil
