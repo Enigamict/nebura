@@ -45,8 +45,9 @@ const (
 	staticRouteAdd uint8 = 1
 	bgpRouteAdd    uint8 = 2
 	IPv6RouteAdd   uint8 = 3
-	RIBFind        uint8 = 4
-	tcNetem        uint8 = 5
+	segsAdd        uint8 = 4
+	srEndAction    uint8 = 5
+	tcNetem        uint8 = 6
 )
 
 type RIBPrefix struct {
@@ -112,8 +113,10 @@ func (n NservMsgSend) NecliEvent(ns *Nserver) error {
 		NetlinkSendRouteAdd(n.data)
 	case IPv6RouteAdd:
 		NetlinkSendIPv6RouteAdd(n.data)
-	case RIBFind:
-		//ns.NclientRibFind()
+	case segsAdd:
+		NetlinkSendSegsAdd(n.data)
+	case srEndAction:
+		NetlinkSendSrEndAction(n.data)
 	case tcNetem:
 		NetlinkSendTcNetem(n.data)
 	default:
@@ -151,6 +154,32 @@ func NetlinkSendStaticRouteAdd(data []byte) error {
 
 	//C.ipv4_route_add(C.CString(dstPrefix.String()), C.CString(srcPrefix.String()), C.int(index))
 
+	return nil
+}
+
+func NetlinkSendSegsAdd(data []byte) error {
+
+	fmt.Printf("%v", data[4:20])
+	encapPrefix := prefixPadding(data[0:4])
+	segs := v6prefixPadding(data[4:20])
+	fmt.Printf("%s", encapPrefix.String())
+	fmt.Printf("%s", segs.String())
+	C.seg6_route_add(C.CString(encapPrefix.String()), C.CString(segs.String()))
+	return nil
+}
+
+const EndDX4 uint8 = 6
+
+func NetlinkSendSrEndAction(data []byte) error {
+
+	fmt.Printf("data:%v", data[17:21])
+	endAction := uint8(data[0])
+	encapPrefix := v6prefixPadding(data[1:17])
+	dstPrefix := prefixPadding(data[17:21])
+	switch endAction {
+	case EndDX4: // indexをなんとかする
+		C.seg6_end_aciton(C.CString(encapPrefix.String()), C.CString(dstPrefix.String()))
+	}
 	return nil
 }
 

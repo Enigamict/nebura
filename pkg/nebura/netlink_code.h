@@ -15,9 +15,9 @@
 
 int ipv4_route_add(char *src_addr, char *dst_addr, int index, int len);
 int ipv6_route_add(char *src_addr, char *dst_addr, int index, int len);
-struct ipv6_sr_hdr *parse_srh();
-int seg6_end_aciton(struct in6_addr dst_addr);
-int seg6_route_add(struct in_addr dst_addr);
+struct ipv6_sr_hdr *parse_srh(char *segs);
+int seg6_end_aciton(char *en, char *nh);
+int seg6_route_add(char *encap_addr, char *segs);
 int get_time(unsigned int *time, const char *str);
 int tc_core_init(void);
 int tc_netem_add(int index, char *latestr);

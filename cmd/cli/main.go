@@ -19,6 +19,10 @@ func main() {
 	a, _ := config.ReadConfig(argconfig)
 	n := nebura.NclientInit()
 	fmt.Printf("aa:%v:aa", a.IPPrefixAdd.DstAddr)
-	n.SendNclientIPv6RouteAdd(a.IPPrefixAdd.DstAddr, a.IPPrefixAdd.SrcAddr,
-		uint8(a.IPPrefixAdd.DstAddrLen), uint8(a.IPPrefixAdd.Index))
+	//n.SendNclientIPv6RouteAdd(a.IPPrefixAdd.DstAddr, a.IPPrefixAdd.SrcAddr,
+	//	uint8(a.IPPrefixAdd.DstAddrLen), uint8(a.IPPrefixAdd.Index))
+	//n.SendNclientSeg6Add(a.Seg6Add.EncapAddr, a.Seg6Add.Segs)
+
+	n.SendNclientSRendAction(a.EndActionAdd.EndAction, a.EndActionAdd.NextHop,
+		a.EndActionAdd.EncapAddr)
 }

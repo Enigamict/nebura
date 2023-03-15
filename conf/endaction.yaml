@@ -3,4 +3,5 @@ config:
         select: nebura
         srv6endconfig: 
           endaction: "END.DX4"
-          DstAddr: "10.0.0.2"
+          encapaddr: "fc00:1::14"
+          nexthop: "10.0.0.1"

@@ -113,7 +113,7 @@ struct netlink_msg req;
   return 1; 
 }
 
-struct ipv6_sr_hdr *parse_srh()
+struct ipv6_sr_hdr *parse_srh(char *segs)
 {
 	struct ipv6_sr_hdr *srh;
 	int srhlen;
@@ -127,14 +127,19 @@ struct ipv6_sr_hdr *parse_srh()
 	srh->type = 4;
 	srh->segments_left = 0;
 	srh->first_segment = 0;
-  inet_pton(AF_INET6, "fc00:2::11", &srh->segments[0]);
+  inet_pton(AF_INET6, segs, &srh->segments[0]);
 
   return srh;
 }
 
-int seg6_end_aciton(struct in6_addr dst_addr) {
+int seg6_end_aciton(char *en, char *nh) {
 
   struct netlink_msg req;
+  struct in6_addr encap_prefix;
+  struct in_addr via_prefix;
+
+  inet_pton(AF_INET6, en, &encap_prefix);
+  inet_pton(AF_INET, nh, &via_prefix);
 
   int fd = socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE);
 
@@ -155,8 +160,8 @@ int seg6_end_aciton(struct in6_addr dst_addr) {
   req.r.rtm_type = RTN_UNICAST;
   req.r.rtm_flags = 0;
 
-  addattr_l(&req.n, sizeof(req), RTA_DST, &dst_addr, sizeof(struct in6_addr)); // dst
-  uint32_t oif_idx = 3;
+  addattr_l(&req.n, sizeof(req), RTA_DST, &encap_prefix, sizeof(struct in6_addr)); // dst
+  uint32_t oif_idx = 39;
   addattr32(&req.n, sizeof(req), RTA_OIF, oif_idx);
   char buf[1024];
   struct rtattr *rta = (void *)buf;
@@ -165,9 +170,7 @@ int seg6_end_aciton(struct in6_addr dst_addr) {
   struct rtattr *nest;
   nest = rta_nest(rta, sizeof(buf), RTA_ENCAP);
   rta_addattr32(rta, sizeof(buf), SEG6_LOCAL_ACTION, SEG6_LOCAL_ACTION_END_DX4);
-  struct in_addr via_prefix;
 
-  inet_pton(AF_INET, "1.1.1.1", &via_prefix);
   rta_addattr_l(rta, sizeof(buf), SEG6_LOCAL_NH4,
 					    &via_prefix, sizeof(struct in_addr));
 
@@ -185,11 +188,15 @@ int seg6_end_aciton(struct in6_addr dst_addr) {
   //parse(answer, sizeof(buf));
 
 }
-int seg6_route_add(struct in_addr dst_addr) {
+int seg6_route_add(char *encap_addr, char *segs) {
 
   struct netlink_msg req;
   struct ipv6_sr_hdr *sr;
   struct seg6_iptunnel_encap *tuninfo;
+
+  struct in_addr encap_prefix;
+
+  inet_pton(AF_INET, encap_addr, &encap_prefix);
 
   int fd = socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE);
 
@@ -210,8 +217,8 @@ int seg6_route_add(struct in_addr dst_addr) {
   req.r.rtm_type = RTN_UNICAST;
   req.r.rtm_flags = 0;
 
-  addattr_l(&req.n, sizeof(req), RTA_DST, &dst_addr, sizeof(struct in_addr)); // dst
-  uint32_t oif_idx = 3;
+  addattr_l(&req.n, sizeof(req), RTA_DST, &encap_prefix, sizeof(struct in_addr)); // dst
+  uint32_t oif_idx = 40;
   addattr32(&req.n, sizeof(req), RTA_OIF, oif_idx);
   char buf[1024];
   struct rtattr *rta = (void *)buf;
@@ -219,7 +226,7 @@ int seg6_route_add(struct in_addr dst_addr) {
   rta->rta_len = RTA_LENGTH(0); 
   struct rtattr *nest;
   nest = rta_nest(rta, sizeof(buf), RTA_ENCAP);
-  sr = parse_srh();
+  sr = parse_srh(segs);
   int sr_len;
   sr_len = (sr->hdrlen + 1) << 3;
   tuninfo = malloc(sizeof(*tuninfo) + sr_len);

@@ -20,13 +20,14 @@ type IPPrefixAdd struct {
 }
 
 type Seg6Add struct {
-	Segs    string `yaml:"segs"`
-	DstAddr string `yaml:"dstaddr"`
+	Segs      string `yaml:"segs"`
+	EncapAddr string `yaml:"encapaddr"`
 }
 
 type EndActionAdd struct {
 	EndAction string `yaml:"endaction"`
-	DstAddr   string `yaml:"dstaddr"`
+	EncapAddr string `yaml:"encapaddr"`
+	NextHop   string `yaml:"nexthop"`
 }
 
 type PeerConf struct {

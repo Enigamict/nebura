@@ -28,14 +28,20 @@ type NclientRouteAdd struct {
 	NLRI    Prefix
 }
 
-type NclientBgpRibFind struct {
-	NLRI      Prefix
-	RouteType uint8
-}
-
 type NclientIPv6RouteAdd struct {
 	Nexthop Prefix
 	NLRI    Prefix
+}
+
+type NclientSeg6Add struct {
+	EncapPrefix net.IP
+	Segs        net.IP
+}
+
+type NclientSrEndAction struct {
+	EndAction uint8
+	EncapAddr net.IP
+	NextHop   net.IP
 }
 
 type NclientTcNetem struct {
@@ -72,6 +78,24 @@ func (n *NclientIPv6RouteAdd) writeTo() ([]byte, error) {
 	return buf, nil
 }
 
+func (n *NclientSeg6Add) writeTo() ([]byte, error) {
+
+	var buf []byte
+	buf = append(buf, n.EncapPrefix...)
+	buf = append(buf, n.Segs...) // segsに合わせて可変長にする必要がある
+
+	return buf, nil
+}
+
+func (n *NclientSrEndAction) writeTo() ([]byte, error) {
+	var buf []byte
+
+	buf = append(buf, n.EndAction)
+	buf = append(buf, n.EncapAddr...)
+	buf = append(buf, n.NextHop...)
+
+	return buf, nil
+}
 func (n *NclientTcNetem) writeTo() ([]byte, error) {
 
 	var buf []byte
@@ -82,13 +106,6 @@ func (n *NclientTcNetem) writeTo() ([]byte, error) {
 
 	index, _ := net.InterfaceByName(n.inter)
 	buf = append(buf, byte(index.Index))
-	return buf, nil
-}
-
-func (n *NclientBgpRibFind) writeTo() ([]byte, error) {
-
-	var buf []byte
-	buf[0] = n.RouteType
 	return buf, nil
 }
 
@@ -157,6 +174,7 @@ func (n *Nclient) SendNclientIPv4RouteAdd(prefix net.IP, nexthop net.IP, len uin
 
 func (n *Nclient) SendNclientIPv6RouteAdd(prefix string, nexthop string, len uint8, index uint8) error {
 
+	net.IP(nexthop).To16()
 	NexthopPrefix := net.ParseIP(nexthop).To16()
 	AddPrefix := net.ParseIP(prefix).To16() // TODO: なぜか直接メンバ内でTo16()を実行すると、バイナリが入らないのでここで作ってから入れています
 
@@ -178,6 +196,42 @@ func (n *Nclient) SendNclientIPv6RouteAdd(prefix string, nexthop string, len uin
 	n.sendNclientAPI(3, body)
 	return nil
 
+}
+
+func (n *Nclient) SendNclientSeg6Add(encapaddr string, segs string) error {
+	body := &NclientSeg6Add{
+		EncapPrefix: net.ParseIP(encapaddr).To4(),
+		Segs:        net.ParseIP(segs).To16(), // まだシングルでしか入れられない
+	}
+
+	NeburaHdrSize = 23
+	fmt.Printf("%v", body)
+	n.sendNclientAPI(4, body)
+	return nil
+}
+
+func endActionType(en string) uint8 {
+
+	switch en {
+	case "END.DX4":
+		return uint8(6) // TODO 増やす
+	}
+
+	return 0
+}
+
+func (n *Nclient) SendNclientSRendAction(en string, nh string, ea string) error {
+
+	body := &NclientSrEndAction{
+		EndAction: endActionType(en),
+		EncapAddr: net.ParseIP(ea).To16(),
+		NextHop:   net.ParseIP(nh).To4(),
+	}
+
+	fmt.Printf("%v", body)
+	NeburaHdrSize = 24
+	n.sendNclientAPI(5, body)
+	return nil
 }
 
 func (n *Nclient) SendNclientTcNetem(inter string, rate string) error {

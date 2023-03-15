@@ -2,5 +2,5 @@ config:
     -
         select: nebura
         srv6config: 
-          Segs: "fc00:2::11"
-          DstAddr: "10.0.0.2"
+          segs: "fc00:3::10"
+          encapaddr: "192.168.4.0"
