@@ -2,5 +2,7 @@ config:
     -
         select: nebura
         ipconfig: 
-          srcaddr: "10.0.0.1"
-          dstaddr: "fc00:2::11"
+          srcaddr: "2001:db8:1000::"
+          dstaddr: "35::"
+          dstaddr_len: 64
+          index: 40

@@ -13,8 +13,10 @@ type TcSetConf struct {
 }
 
 type IPPrefixAdd struct {
-	SrcAddr string `yaml:"srcaddr"`
-	DstAddr string `yaml:"dstaddr"`
+	SrcAddr    string `yaml:"srcaddr"`
+	DstAddr    string `yaml:"dstaddr"`
+	DstAddrLen int    `yaml:"dstaddr_len"`
+	Index      int    `yaml:"index"`
 }
 
 type Seg6Add struct {
@@ -37,12 +39,6 @@ type PeerConf struct {
 type PeerPrefix struct {
 	NeiAddr string `yaml:"neiaddr"`
 }
-type StaticConf struct {
-	IPPrefixAdd  IPPrefixAdd  `yaml:"ipconfig"`
-	Seg6Add      Seg6Add      `yaml:"srv6config"`
-	EndActionAdd EndActionAdd `yaml:"srv6endconfig"`
-	TcConf       TcSetConf    `yaml:"tcconfig"`
-}
 
 type Data struct {
 	Conf []Conf `yaml:"config"`
@@ -50,7 +46,6 @@ type Data struct {
 
 type Conf struct {
 	Select       string       `yaml:"select"`
-	FibInstall   bool         `yaml:"fib_install"`
 	IPPrefixAdd  IPPrefixAdd  `yaml:"ipconfig"`
 	Seg6Add      Seg6Add      `yaml:"srv6config"`
 	EndActionAdd EndActionAdd `yaml:"srv6endconfig"`
