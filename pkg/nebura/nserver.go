@@ -7,6 +7,7 @@ package nebura
 */
 import "C"
 
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -cc clang XdpProg ../bpf/test.c -- -I../bpf_map
 import (
 	"encoding/binary"
 	"fmt"
@@ -16,6 +17,10 @@ import (
 	"os"
 	"os/signal"
 	"sync"
+
+	"github.com/cilium/ebpf"
+	"github.com/vishvananda/netlink"
+	"github.com/vishvananda/netlink/nl"
 )
 
 type ApiType uint8
@@ -24,7 +29,11 @@ var NeburaHdrSize uint16
 
 var r Rib = Init()
 var RibCount = 0
+var iface string
 
+type Collect struct {
+	Prog *ebpf.Program `ebpf:"xdp_drop"`
+}
 type (
 	ClientEvent interface {
 		NecliEvent(*Nserver) error
@@ -60,7 +69,7 @@ type RIBPrefix struct {
 
 type Rib struct {
 	mu     *sync.Mutex
-	Preifx map[string][]RIBPrefix
+	Preifx map[string][]RIBPrefix // mapでもつ必要性は？ stringだと検索が遅くなる。BGPを0番としてみるともっと早くなるかも?(配列化する?)
 }
 
 type Nserver struct {
@@ -147,12 +156,19 @@ func (n *Nserver) ClientSendEvent() error {
 }
 
 func NetlinkSendStaticRouteAdd(data []byte) error {
-	//dstPrefix := prefixPadding(data[4:8])
-	//srcPrefix := prefixPadding(data[9:13])
+	dstPrefixLen := uint8(data[0])
+	dstPrefix := prefixPadding(data[1:5])
+	srcPrefix := prefixPadding(data[6:10])
 
-	//index, _ := NexthopPrefixIndex(srcPrefix.String())
+	index, err := NexthopPrefixIndex(srcPrefix.String())
 
-	//C.ipv4_route_add(C.CString(dstPrefix.String()), C.CString(srcPrefix.String()), C.int(index))
+	if err != nil {
+		return nil
+
+	}
+
+	C.ipv4_route_add(C.CString(dstPrefix.String()), C.CString(srcPrefix.String()),
+		C.int(index), C.int(dstPrefixLen))
 
 	return nil
 }
@@ -281,14 +297,41 @@ func NetlinkSendIPv6RouteAdd(data []byte) error {
 	// TODO /64 /128 interfaceだけで入れたい場合を考える
 
 	fmt.Printf("data%v", data)
-	dstPrefix := v6prefixPadding(data[0:16])
+	//dstPrefix := v6prefixPadding(data[0:16])
 
-	srcPrefix := v6prefixPadding(data[17:33])
-	fmt.Printf("prefix:%s", srcPrefix.String())
-	fmt.Printf("prefix:%s", dstPrefix.String())
-	C.ipv6_route_add(C.CString(srcPrefix.String()),
-		C.CString(dstPrefix.String()), C.int(40), C.int(128))
-	return nil
+	//srcPrefix := v6prefixPadding(data[17:33])
+	//fmt.Printf("prefix:%s", srcPrefix.String())
+	//fmt.Printf("prefix:%s", dstPrefix.String())
+	//C.ipv6_route_add(C.CString(srcPrefix.String()),
+	//	C.CString(dstPrefix.String()), C.int(40), C.int(128))
+	link, err := netlink.LinkByName("veth1")
+	if err != nil {
+		panic(err)
+	}
+	var collect = &Collect{}
+	spec, err := LoadXdpProg() // test用 TODO : 解除が出来ない SETする用のNetlinkのコードとローダーをかく
+	if err != nil {
+		panic(err)
+	}
+	if err := spec.LoadAndAssign(collect, nil); err != nil {
+		panic(err)
+	}
+	if err := netlink.LinkSetXdpFdWithFlags(link, collect.Prog.FD(), nl.XDP_FLAGS_SKB_MODE); err != nil {
+		panic(err)
+	}
+	defer func() {
+		netlink.LinkSetXdpFdWithFlags(link, -1, nl.XDP_FLAGS_SKB_MODE)
+	}()
+
+	ctrlC := make(chan os.Signal, 1)
+	signal.Notify(ctrlC, os.Interrupt)
+
+	for {
+		select {
+		case <-ctrlC:
+			fmt.Println("\nDetaching program and exit")
+		}
+	}
 }
 
 func (b *ApiHeader) DecodeApiHdr(data []byte) error {
@@ -321,18 +364,6 @@ func (n *Nserver) NeburaRead() error {
 
 	return nil
 }
-
-//func (n *Nserver) NclientRibFind() {
-//
-//	var buf []byte
-//
-//	for _, v := range r.Preifx {
-//		buf = append(buf, v.Prefix...)
-//		log.Printf("%v", buf)
-//	}
-//
-//	n.Conn.Write(buf)
-//}
 
 func signalNotify() {
 	quit := make(chan os.Signal)
@@ -369,7 +400,4 @@ func NserverStart() {
 		n.NeburaRead()
 	}
 
-	//TestCallBackEvent(TestSendEvent)
-	//n.eventChan <- NservAccept{}
-	//n.ServerSendEvent()
 }

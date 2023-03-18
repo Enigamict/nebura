@@ -184,9 +184,6 @@ int seg6_end_aciton(char *en, char *nh) {
 
   nl_talk_iov(fd, &iov);
   return 1; 
-
-  //parse(answer, sizeof(buf));
-
 }
 int seg6_route_add(char *encap_addr, char *segs) {
 

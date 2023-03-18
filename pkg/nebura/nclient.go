@@ -174,7 +174,6 @@ func (n *Nclient) SendNclientIPv4RouteAdd(prefix net.IP, nexthop net.IP, len uin
 
 func (n *Nclient) SendNclientIPv6RouteAdd(prefix string, nexthop string, len uint8, index uint8) error {
 
-	net.IP(nexthop).To16()
 	NexthopPrefix := net.ParseIP(nexthop).To16()
 	AddPrefix := net.ParseIP(prefix).To16() // TODO: なぜか直接メンバ内でTo16()を実行すると、バイナリが入らないのでここで作ってから入れています
 
@@ -215,6 +214,8 @@ func endActionType(en string) uint8 {
 	switch en {
 	case "END.DX4":
 		return uint8(6) // TODO 増やす
+	default:
+		log.Printf("not endaction")
 	}
 
 	return 0
