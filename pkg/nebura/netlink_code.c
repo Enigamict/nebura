@@ -21,7 +21,7 @@ void hexdump1(FILE* fp, const void *buffer, size_t bufferlen)
   }
 }
 
-int ipv4_route_add(char *src_addr, char *dst_addr, int index, int len) {
+int ipv4_route_add(char *src_addr, char *dst_addr, int index, int len, bool route) {
 
   struct netlink_msg req;
 
@@ -39,7 +39,7 @@ int ipv4_route_add(char *src_addr, char *dst_addr, int index, int len) {
 
   req.n.nlmsg_len = NLMSG_LENGTH(sizeof(struct rtmsg));
   req.n.nlmsg_flags = NLM_F_REQUEST | NLM_F_CREATE | NLM_F_ACK | NLM_F_REPLACE;
-  req.n.nlmsg_type  = RTM_NEWROUTE;
+  req.n.nlmsg_type  = route ? RTM_NEWROUTE : RTM_DELROUTE;
   req.r.rtm_family = AF_INET;
   req.r.rtm_dst_len = len;
   req.r.rtm_src_len = 0;
@@ -72,7 +72,7 @@ int ipv4_route_add(char *src_addr, char *dst_addr, int index, int len) {
 
 }
 
-int ipv6_route_add(char *src_addr, char *dst_addr, int index, int len) {
+int ipv6_route_add(char *src_addr, char *dst_addr, int index, int len, bool route) {
 struct netlink_msg req;
 
   struct in6_addr add_v6prefix;
@@ -88,7 +88,7 @@ struct netlink_msg req;
 
   req.n.nlmsg_len = NLMSG_LENGTH(sizeof(struct rtmsg));
   req.n.nlmsg_flags = NLM_F_REQUEST | NLM_F_CREATE | NLM_F_ACK | NLM_F_REPLACE;
-  req.n.nlmsg_type  = RTM_NEWROUTE;
+  req.n.nlmsg_type  = route ? RTM_NEWROUTE : RTM_DELROUTE;
   req.r.rtm_family = AF_INET6;
   req.r.rtm_dst_len = len;
   req.r.rtm_src_len = 0;

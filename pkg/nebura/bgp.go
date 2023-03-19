@@ -206,7 +206,7 @@ func BgpupdateParse(data []byte, routing string) error {
 	case "nebura":
 		var n = NclientInit()
 		log.Printf("Nebura Conect...\n")
-		n.SendNclientIPv4RouteAdd(b.NLRI.NLRI, b.Nexthop, b.NLRI.Len)
+		n.SendNclientIPv4Route(b.NLRI.NLRI, b.Nexthop, b.NLRI.Len, 0)
 	case "zebra":
 
 		c, err := zebra.ZebraClientInit()

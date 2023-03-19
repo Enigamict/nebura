@@ -31,9 +31,6 @@ var r Rib = Init()
 var RibCount = 0
 var iface string
 
-type Collect struct {
-	Prog *ebpf.Program `ebpf:"xdp_drop"`
-}
 type (
 	ClientEvent interface {
 		NecliEvent(*Nserver) error
@@ -52,11 +49,12 @@ type (
 
 const (
 	staticRouteAdd uint8 = 1
-	bgpRouteAdd    uint8 = 2
+	IPv4RouteAdd   uint8 = 2
 	IPv6RouteAdd   uint8 = 3
 	segsAdd        uint8 = 4
 	srEndAction    uint8 = 5
 	tcNetem        uint8 = 6
+	xdpTest        uint8 = 7 //将来的に変えたいかも
 )
 
 type RIBPrefix struct {
@@ -118,7 +116,7 @@ func (n NservMsgSend) NecliEvent(ns *Nserver) error {
 	switch n.api.Type {
 	case staticRouteAdd:
 		NetlinkSendStaticRouteAdd(n.data)
-	case bgpRouteAdd:
+	case IPv4RouteAdd:
 		NetlinkSendRouteAdd(n.data)
 	case IPv6RouteAdd:
 		NetlinkSendIPv6RouteAdd(n.data)
@@ -128,6 +126,8 @@ func (n NservMsgSend) NecliEvent(ns *Nserver) error {
 		NetlinkSendSrEndAction(n.data)
 	case tcNetem:
 		NetlinkSendTcNetem(n.data)
+	case xdpTest:
+		XdpSet(n.data)
 	default:
 		log.Printf("not type")
 	}
@@ -168,8 +168,35 @@ func NetlinkSendStaticRouteAdd(data []byte) error {
 	}
 
 	C.ipv4_route_add(C.CString(dstPrefix.String()), C.CString(srcPrefix.String()),
-		C.int(index), C.int(dstPrefixLen))
+		C.int(index), C.int(dstPrefixLen), true)
 
+	return nil
+}
+
+func XdpSet(data []byte) error {
+	type Collect struct {
+		Prog *ebpf.Program `ebpf:"xdp_drop"`
+	}
+	fmt.Printf("XDP test")
+
+	link, err := netlink.LinkByName("veth2")
+	if err != nil {
+		panic(err)
+	}
+	var collect = &Collect{}
+	spec, err := LoadXdpProg() // test用 TODO : SETする用のNetlinkのコードとローダーをかく
+	if err != nil {
+		panic(err)
+	}
+	if err := spec.LoadAndAssign(collect, nil); err != nil { // アタッチ
+		panic(err)
+	}
+
+	if err := netlink.LinkSetXdpFdWithFlags(link, collect.Prog.FD(), nl.XDP_FLAGS_SKB_MODE); err != nil {
+		panic(err)
+	}
+
+	netlink.LinkSetXdpFdWithFlags(link, -1, nl.XDP_FLAGS_SKB_MODE) // 解除
 	return nil
 }
 
@@ -265,13 +292,29 @@ func NetlinkSendTcNetem(data []byte) error {
 	return nil
 }
 
+func RouteFlag(f uint8) bool {
+	if f == 1 {
+		return false
+	}
+
+	return true
+}
+
 func NetlinkSendRouteAdd(data []byte) error {
 
 	dstPrefixLen := uint8(data[0])
 	dstPrefix := prefixPadding(data[1:5])
 	srcPrefix := prefixPadding(data[6:10])
+	flag := RouteFlag(uint8(data[10]))
 
 	index, err := NexthopPrefixIndex(srcPrefix.String())
+
+	if !flag {
+		C.ipv4_route_add(C.CString(dstPrefix.String()), C.CString(srcPrefix.String()),
+			C.int(index), C.int(dstPrefixLen), false)
+		return nil
+
+	}
 
 	if err != nil {
 		return nil
@@ -288,7 +331,8 @@ func NetlinkSendRouteAdd(data []byte) error {
 	r.Add(a)
 
 	C.ipv4_route_add(C.CString(dstPrefix.String()), C.CString(srcPrefix.String()),
-		C.int(index), C.int(dstPrefixLen))
+		C.int(index), C.int(dstPrefixLen), true)
+
 	return nil
 }
 
@@ -304,34 +348,7 @@ func NetlinkSendIPv6RouteAdd(data []byte) error {
 	//fmt.Printf("prefix:%s", dstPrefix.String())
 	//C.ipv6_route_add(C.CString(srcPrefix.String()),
 	//	C.CString(dstPrefix.String()), C.int(40), C.int(128))
-	link, err := netlink.LinkByName("veth1")
-	if err != nil {
-		panic(err)
-	}
-	var collect = &Collect{}
-	spec, err := LoadXdpProg() // test用 TODO : 解除が出来ない SETする用のNetlinkのコードとローダーをかく
-	if err != nil {
-		panic(err)
-	}
-	if err := spec.LoadAndAssign(collect, nil); err != nil {
-		panic(err)
-	}
-	if err := netlink.LinkSetXdpFdWithFlags(link, collect.Prog.FD(), nl.XDP_FLAGS_SKB_MODE); err != nil {
-		panic(err)
-	}
-	defer func() {
-		netlink.LinkSetXdpFdWithFlags(link, -1, nl.XDP_FLAGS_SKB_MODE)
-	}()
-
-	ctrlC := make(chan os.Signal, 1)
-	signal.Notify(ctrlC, os.Interrupt)
-
-	for {
-		select {
-		case <-ctrlC:
-			fmt.Println("\nDetaching program and exit")
-		}
-	}
+	return nil
 }
 
 func (b *ApiHeader) DecodeApiHdr(data []byte) error {

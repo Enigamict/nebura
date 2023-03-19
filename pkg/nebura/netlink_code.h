@@ -13,8 +13,8 @@
 #include "libnetlink.h"
 #include "netlink_msg.h"
 
-int ipv4_route_add(char *src_addr, char *dst_addr, int index, int len);
-int ipv6_route_add(char *src_addr, char *dst_addr, int index, int len);
+int ipv4_route_add(char *src_addr, char *dst_addr, int index, int len, bool route);
+int ipv6_route_add(char *src_addr, char *dst_addr, int index, int len, bool route);
 struct ipv6_sr_hdr *parse_srh(char *segs);
 int seg6_end_aciton(char *en, char *nh);
 int seg6_route_add(char *encap_addr, char *segs);

@@ -26,11 +26,18 @@ type Prefix struct {
 type NclientRouteAdd struct {
 	Nexthop Prefix
 	NLRI    Prefix
+	Flag    uint8
+}
+
+type NclientXdp struct {
+	ProType uint8
+	Inter   string
 }
 
 type NclientIPv6RouteAdd struct {
 	Nexthop Prefix
 	NLRI    Prefix
+	Flag    uint8
 }
 
 type NclientSeg6Add struct {
@@ -64,6 +71,7 @@ func (n *NclientRouteAdd) writeTo() ([]byte, error) {
 
 	buf = append(buf, n.Nexthop.PrefixLen)
 	buf = append(buf, n.Nexthop.Prefix[:dstBlen]...)
+	buf = append(buf, n.Flag)
 
 	return buf, nil
 }
@@ -109,6 +117,15 @@ func (n *NclientTcNetem) writeTo() ([]byte, error) {
 	return buf, nil
 }
 
+func (n *NclientXdp) writeTo() ([]byte, error) {
+	var buf []byte
+
+	buf = append(buf, n.ProType)
+	index, _ := net.InterfaceByName(n.Inter)
+	buf = append(buf, byte(index.Index))
+	return buf, nil
+}
+
 func (api *ApiHeader) writeTo() ([]byte, error) {
 	var buf []byte
 	buf = make([]byte, 3)
@@ -124,20 +141,6 @@ func (api *ApiHeader) writeTo() ([]byte, error) {
 	return append(buf, hdr...), nil
 }
 
-//func (n *Nclient) readNclietMsg() error {
-//
-//	for {
-//		log.Printf("Read...\n")
-//		var header [3]byte
-//		_, err := io.ReadFull(n.Conn, header[:])
-//
-//		if err != nil {
-//			log.Printf("err read")
-//			return nil
-//		}
-//	}
-//}
-
 func (n *Nclient) sendNclientAPI(rtype uint8, body Body) error {
 	api := &ApiHeader{
 		Len:  NeburaHdrSize,
@@ -152,7 +155,7 @@ func (n *Nclient) sendNclientAPI(rtype uint8, body Body) error {
 	return nil
 }
 
-func (n *Nclient) SendNclientIPv4RouteAdd(prefix net.IP, nexthop net.IP, len uint8) error {
+func (n *Nclient) SendNclientIPv4Route(prefix net.IP, nexthop net.IP, len uint8, flag uint8) error {
 
 	body := &NclientRouteAdd{
 		Nexthop: Prefix{
@@ -163,16 +166,17 @@ func (n *Nclient) SendNclientIPv4RouteAdd(prefix net.IP, nexthop net.IP, len uin
 			Prefix:    prefix,
 			PrefixLen: len,
 		},
+		Flag: flag,
 	}
 
-	NeburaHdrSize = 13
+	NeburaHdrSize = 14
 
 	n.sendNclientAPI(2, body)
 	return nil
 
 }
 
-func (n *Nclient) SendNclientIPv6RouteAdd(prefix string, nexthop string, len uint8, index uint8) error {
+func (n *Nclient) SendNclientIPv6Route(prefix string, nexthop string, len uint8, index uint8) error {
 
 	NexthopPrefix := net.ParseIP(nexthop).To16()
 	AddPrefix := net.ParseIP(prefix).To16() // TODO: なぜか直接メンバ内でTo16()を実行すると、バイナリが入らないのでここで作ってから入れています
@@ -244,7 +248,21 @@ func (n *Nclient) SendNclientTcNetem(inter string, rate string) error {
 
 	NeburaHdrSize = 9
 
-	n.sendNclientAPI(5, body)
+	n.sendNclientAPI(6, body)
+	return nil
+
+}
+
+func (n *Nclient) SendNclientXdp(pro uint8, inter string) error {
+
+	body := &NclientXdp{
+		ProType: pro,
+		Inter:   inter,
+	}
+
+	NeburaHdrSize = 5
+
+	n.sendNclientAPI(7, body)
 	return nil
 
 }
