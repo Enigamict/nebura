@@ -167,7 +167,7 @@ type BGPRouteBody struct {
 	API      APIType
 }
 
-type BgpClient struct {
+type Zclient struct {
 	routeType RouteType
 	Conn      net.Conn
 	Version   uint8
@@ -219,7 +219,7 @@ func (b *helloBody) writeTo() ([]byte, error) {
 	return buf, nil
 }
 
-func (c *BgpClient) sendCommand(command APIType, vrfID uint32, body Body) error {
+func (c *Zclient) sendCommand(command APIType, vrfID uint32, body Body) error {
 	m := &Message{
 		Header: Header{
 			Len:     ZebraHeaderSize, // Zebra ver 6 = 10
@@ -345,7 +345,7 @@ func (b *BGPRouteBody) writeTo() ([]byte, error) {
 	return buf, nil
 }
 
-func (c *BgpClient) SendHello() error {
+func (c *Zclient) SendHello() error {
 	if c.routeType > 0 {
 		body := &helloBody{
 			routeType: c.routeType,
@@ -356,7 +356,7 @@ func (c *BgpClient) SendHello() error {
 	return nil
 }
 
-func (c *BgpClient) SendRouteAdd(prefix string, nexthop string) error {
+func (c *Zclient) SendRouteAdd(prefix string, nexthop string) error {
 
 	body := &BGPRouteBody{
 		Type:     RouteBGP,
@@ -380,14 +380,14 @@ func (c *BgpClient) SendRouteAdd(prefix string, nexthop string) error {
 	return c.sendCommand(RouteAdd, 0, body) // body interface
 }
 
-func ZebraClientInit() (*BgpClient, error) {
+func ZebraClientInit() (*Zclient, error) {
 	conn, err := net.Dial("unix", "/var/run/frr/zserv.api")
 
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	c := &BgpClient{
+	c := &Zclient{
 		routeType: RouteBGP,
 		Conn:      conn,
 		Version:   6,

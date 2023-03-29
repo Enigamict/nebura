@@ -171,7 +171,7 @@ func (n *Nclient) SendNclientIPv4Route(prefix net.IP, nexthop net.IP, len uint8,
 
 	NeburaHdrSize = 14
 
-	n.sendNclientAPI(2, body)
+	n.sendNclientAPI(1, body)
 	return nil
 
 }
@@ -196,7 +196,7 @@ func (n *Nclient) SendNclientIPv6Route(prefix string, nexthop string, len uint8,
 	fmt.Printf("hex:%s", hex.Dump(body.Nexthop.Prefix))
 	fmt.Printf("hex:%s", body.Nexthop.Prefix.String())
 
-	n.sendNclientAPI(3, body)
+	n.sendNclientAPI(2, body)
 	return nil
 
 }
@@ -209,7 +209,7 @@ func (n *Nclient) SendNclientSeg6Add(encapaddr string, segs string) error {
 
 	NeburaHdrSize = 23
 	fmt.Printf("%v", body)
-	n.sendNclientAPI(4, body)
+	n.sendNclientAPI(3, body)
 	return nil
 }
 
@@ -233,9 +233,8 @@ func (n *Nclient) SendNclientSRendAction(en string, nh string, ea string) error 
 		NextHop:   net.ParseIP(nh).To4(),
 	}
 
-	fmt.Printf("%v", body)
 	NeburaHdrSize = 24
-	n.sendNclientAPI(5, body)
+	n.sendNclientAPI(4, body)
 	return nil
 }
 
@@ -248,7 +247,7 @@ func (n *Nclient) SendNclientTcNetem(inter string, rate string) error {
 
 	NeburaHdrSize = 9
 
-	n.sendNclientAPI(6, body)
+	n.sendNclientAPI(5, body)
 	return nil
 
 }
@@ -262,7 +261,7 @@ func (n *Nclient) SendNclientXdp(pro uint8, inter string) error {
 
 	NeburaHdrSize = 5
 
-	n.sendNclientAPI(7, body)
+	n.sendNclientAPI(6, body)
 	return nil
 
 }

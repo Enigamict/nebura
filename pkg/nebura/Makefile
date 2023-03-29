@@ -6,6 +6,7 @@ OBJS = $(SRCS:%.c=%.o)
 all :
 	$(CC) $(CFLAGS) -I ./ -c netlink_code.c libnetlink.c 
 	ar rcs libnetlink_code.a  $(OBJS)
+	go generate
 	cd ../../cmd/bgp/ && go build
 
 

@@ -48,13 +48,12 @@ type (
 )
 
 const (
-	staticRouteAdd uint8 = 1
-	IPv4RouteAdd   uint8 = 2
-	IPv6RouteAdd   uint8 = 3
-	segsAdd        uint8 = 4
-	srEndAction    uint8 = 5
-	tcNetem        uint8 = 6
-	xdpTest        uint8 = 7 //将来的に変えたいかも
+	IPv4RouteAdd uint8 = 1
+	IPv6RouteAdd uint8 = 2
+	segsAdd      uint8 = 3
+	srEndAction  uint8 = 4
+	tcNetem      uint8 = 5
+	xdpTest      uint8 = 6 //将来的に変えたいかも
 )
 
 type RIBPrefix struct {
@@ -114,8 +113,6 @@ func NexthopPrefixIndex(prefix string) (int, error) {
 func (n NservMsgSend) NecliEvent(ns *Nserver) error {
 
 	switch n.api.Type {
-	case staticRouteAdd:
-		NetlinkSendStaticRouteAdd(n.data)
 	case IPv4RouteAdd:
 		NetlinkSendRouteAdd(n.data)
 	case IPv6RouteAdd:
@@ -255,12 +252,12 @@ func (r *Rib) RibFind(prefix net.IP, routeType string) bool {
 	return p
 }
 
-func (r *Rib) Add(addRoute RIBPrefix) error { // Addだけで良い、Ribと決まっているから
+func (r *Rib) Add(addRoute RIBPrefix) error {
 
 	defer r.mu.Unlock()
 	r.mu.Lock()
 
-	if r.RibFind(addRoute.Prefix, "BGP") { // BGP以外も入る
+	if r.RibFind(addRoute.Prefix, "BGP") { // TODO: BGP以外も入る
 		log.Printf("RIB Already in prefix")
 
 		return nil
@@ -285,10 +282,9 @@ func Init() Rib {
 func NetlinkSendTcNetem(data []byte) error {
 
 	s := fmt.Sprintf("%s", data[0:5])
-	//index := uint8(data[5])
-	fmt.Printf("%s", s)
+	index := uint8(data[5])
 
-	//C.tc_netem_add(C.int(index), C.CString(s))
+	C.tc_netem_add(C.int(index), C.CString(s))
 	return nil
 }
 
@@ -340,14 +336,13 @@ func NetlinkSendIPv6RouteAdd(data []byte) error {
 
 	// TODO /64 /128 interfaceだけで入れたい場合を考える
 
-	fmt.Printf("data%v", data)
-	//dstPrefix := v6prefixPadding(data[0:16])
+	dstPrefix := v6prefixPadding(data[0:16])
 
-	//srcPrefix := v6prefixPadding(data[17:33])
-	//fmt.Printf("prefix:%s", srcPrefix.String())
-	//fmt.Printf("prefix:%s", dstPrefix.String())
-	//C.ipv6_route_add(C.CString(srcPrefix.String()),
-	//	C.CString(dstPrefix.String()), C.int(40), C.int(128))
+	srcPrefix := v6prefixPadding(data[17:33])
+	fmt.Printf("prefix:%s", srcPrefix.String())
+	fmt.Printf("prefix:%s", dstPrefix.String())
+	C.ipv6_route_add(C.CString(srcPrefix.String()),
+		C.CString(dstPrefix.String()), C.int(40), C.int(128), true)
 	return nil
 }
 

@@ -61,6 +61,7 @@ type XdpProgProgramSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type XdpProgMapSpecs struct {
+	Protocols *ebpf.MapSpec `ebpf:"protocols"`
 }
 
 // XdpProgObjects contains all objects after they have been loaded into the kernel.
@@ -82,10 +83,13 @@ func (o *XdpProgObjects) Close() error {
 //
 // It can be passed to LoadXdpProgObjects or ebpf.CollectionSpec.LoadAndAssign.
 type XdpProgMaps struct {
+	Protocols *ebpf.Map `ebpf:"protocols"`
 }
 
 func (m *XdpProgMaps) Close() error {
-	return _XdpProgClose()
+	return _XdpProgClose(
+		m.Protocols,
+	)
 }
 
 // XdpProgPrograms contains all programs after they have been loaded into the kernel.
