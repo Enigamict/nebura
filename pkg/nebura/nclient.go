@@ -267,7 +267,7 @@ func (n *Nclient) SendNclientXdp(pro uint8, inter string) error {
 }
 
 func NclientInit() *Nclient {
-	conn, err := net.Dial("unix", "/tmp/test.sock")
+	conn, err := net.Dial("unix", "/tmp/nebura.sock")
 
 	if err != nil {
 		log.Fatal(err)

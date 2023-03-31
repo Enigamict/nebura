@@ -389,7 +389,7 @@ func signalNotify() {
 }
 
 func NserverStart() {
-	listener, err := net.Listen("unix", "/tmp/test.sock")
+	listener, err := net.Listen("unix", "/tmp/nebura.sock")
 	if err != nil {
 		log.Fatal(err)
 	}
